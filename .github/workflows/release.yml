@@ -13,7 +13,9 @@ jobs:
   graphwatch:
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: write     # create the release
+      id-token: write     # sign the provenance attestation
+      attestations: write # store it
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
@@ -21,15 +23,21 @@ jobs:
           go-version-file: go.mod
       - run: test -z "$(gofmt -l $(git ls-files '*.go'))"
       - run: go vet ./... && go test ./...
+      - run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
       - name: build
         run: |
           mkdir -p dist
           for t in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64; do
             os=${t%/*}; arch=${t#*/}; ext=; [ "$os" = windows ] && ext=.exe
-            CGO_ENABLED=0 GOOS=$os GOARCH=$arch go build -trimpath -ldflags "-s -w" -o "dist/graphwatch-$os-$arch$ext" .
+            CGO_ENABLED=0 GOOS=$os GOARCH=$arch go build -trimpath -ldflags "-s -w -X main.version=$GITHUB_REF_NAME" -o "dist/graphwatch-$os-$arch$ext" .
           done
           (cd dist && sha256sum graphwatch-* > SHA256SUMS)
+      # SLSA build provenance for every binary: verify a download with
+      #   gh attestation verify graphwatch-<os>-<arch> --repo instruxi-io/graphwatch
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: dist/graphwatch-*
       - name: release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" --title "graphwatch $GITHUB_REF_NAME" --notes "Terminal viewer for Enforcer Graph plans. Download the binary for your platform, check it against SHA256SUMS, make it executable, and run \`graphwatch --demo --layout mycelium\` for the offline demo."
+        run: gh release create "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" --title "graphwatch $GITHUB_REF_NAME" --notes "Command-line client for Enforcer Graph plans. Download the binary for your platform, check it against SHA256SUMS (or verify its provenance with \`gh attestation verify <file> --repo instruxi-io/graphwatch\`), make it executable, and run \`graphwatch --demo --layout mycelium\` for the offline demo."

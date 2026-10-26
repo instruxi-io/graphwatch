@@ -35,6 +35,41 @@ graphwatch --demo --layout mycelium
 On macOS a downloaded binary is quarantined; clear it with
 `xattr -d com.apple.quarantine /usr/local/bin/graphwatch` if Gatekeeper refuses it.
 
+Every release binary also carries a signed build provenance attestation, so you
+can check it was built from this repository by its release workflow:
+
+```bash
+gh attestation verify graphwatch-darwin-arm64 --repo instruxi-io/graphwatch
+```
+
+### Platforms
+
+| platform | support |
+|---|---|
+| Linux, macOS (amd64, arm64) | everything |
+| Windows under WSL | everything |
+| Windows, native | every table command and `--json`; the watch view draws at a fixed 100x32 and cannot read keys; the picker needs WSL. Use Windows Terminal for colour |
+
+## Enterprise use
+
+- **Network.** graphwatch talks only to the API origin (`--base`, then
+  `GRAPH_BASE_URL`, then the `enforcer` plugin's saved `base_url`, then
+  `https://api.instruxi.dev`). It has no telemetry and no update check.
+- **Proxies and CAs.** It uses Go's standard HTTP client, so `HTTPS_PROXY`,
+  `HTTP_PROXY` and `NO_PROXY` apply, and TLS trusts the system certificate
+  store (on Linux, `SSL_CERT_FILE` or `SSL_CERT_DIR` add a corporate CA).
+- **Credentials.** Prefer a sign-in through the `enforcer` plugin or
+  `GRAPH_AUTH_HELPER` (short-lived OAuth) over a long-lived `GRAPH_API_KEY`;
+  the full order is under [Auth](#auth). A key or sign-in with only
+  `enforcer:read` is enough to watch and list.
+- **Writes.** Every command is read-only except `decide`, `resolve`, `attend`
+  (only when you type an answer) and `--demo`. The service still checks each
+  write against your role.
+- **Supply chain.** One static binary with no dependencies outside the Go
+  standard library, built by GitHub Actions with provenance attestations,
+  checked by `govulncheck` in CI and before every release.
+- **Vulnerabilities.** See [SECURITY.md](./SECURITY.md).
+
 ## Demos
 
 | demo | what it is | needs an account? |
