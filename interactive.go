@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"runtime"
 	"strings"
 	"sync"
 	"syscall"
@@ -310,6 +311,10 @@ func runPicker(keyFile, base string, fps int, continuous bool) int {
 	defer undo() // every exit path, including panics
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "graphwatch: cannot read keys from this terminal:", err)
+		if runtime.GOOS == "windows" {
+			// The picker reads keys through stty, which native Windows lacks.
+			fmt.Fprintln(os.Stderr, "graphwatch: on Windows the picker needs WSL; `graphwatch graphs` and `graphwatch --graph <id>` work natively")
+		}
 		return exitRuntime
 	}
 	keys := readKeys(ctx, os.Stdin)
