@@ -59,6 +59,7 @@ has the slug `demo-<scenario>-<unix time>`.
 | `failures-and-reclaims` | Three workers crash while holding a claim. Their nodes stay `claimed` until the 30 s lease lapses (the API minimum, in real time whatever the speed), then turn **reclaimable** and are taken over. Two long jobs heartbeat to keep their lease past 30 s. |
 | `validation` | Every completion is judged by Jev, as a 1-of-1 quorum. Nodes sit in *looking for validation* until Jev decides. One job reports a failing check: Jev rejects it, and the retry passes. See the limits below. |
 | `loop` | Epochs. A five-node pipeline runs to completion, then `POST /graphs/{id}/reset` starts it over in place as the next epoch, three times. The header shows the epoch. A loop is runs, never an edge. |
+| `agent-team` | **Headless** (`npm run agent-team`, below): two Tier-2 agents, owned by a group with a named steward, claim the nodes routed to them, hand a file over through the graph folder, and every hand-off is verified by Snowball (Jev as the 1-of-1 judge). The two agents share a steward, so each is a party to the other's run and is refused as its judge (403): separation of duties follows the accountable human, not the credential. |
 
 **Speed** (0.5×, 1×, 4×) scales the demo's own pauses and work time. It can
 change mid-run. Leases and Jev are real time.
@@ -204,3 +205,37 @@ While a demo is driving a plan, the page holds the completion banner until the
 driver stops. A growing plan can look complete for a moment between bursts,
 because a node still being wired is `cancelled`, which the server counts as
 finished.
+
+## The agent-team scenario (headless)
+
+It needs three identities, which is why it is not a button: the page holds one
+key. `agent-team/run.mjs` drives the API directly and asserts every step; it
+exits non-zero on any failed check and writes the whole transcript (every
+call's identity, method, path and status, never a secret) to
+`agent-team/recordings/agent-team-<unix>.json`. Transcripts carry your
+tenant's real ids, so that directory is git-ignored.
+
+```bash
+GRAPH_API_KEY=<tenant admin key> \
+GRAPH_STEWARD_KEY=<key of a DISPOSABLE human account in the same tenant> \
+npm run agent-team
+```
+
+- `GRAPH_STEWARD_KEY` creates the group, the two agents (owner = the group,
+  steward = itself: v3 only lets a caller name itself as a group-owned
+  agent's steward) and the graph, and mints one `ag_` secret per agent.
+  **This account is deactivated by the run** (and re-activated at the end,
+  unless `AGENT_TEAM_KEEP_STEWARD_OFF=1`). Never point it at a person's real
+  account.
+- `GRAPH_API_KEY` is a tenant admin; it only deactivates and re-activates the
+  steward and reads the agents' state.
+- What it checks, in order: each agent is Tier 2, group-owned, steward named;
+  each claims the node routed to it (the card's `route`); beta sees alpha's
+  `spec.md` in the graph folder; each run is judged by the OTHER agent and a
+  self-vote is `403`; `GET /runs/query?on_behalf_of=me` shows `agent_id` and
+  `on_behalf_of` on every run, and v3's `/agents/{id}/audit-events` names the
+  steward on every agent event; after `PUT /accounts/{steward}/active false`,
+  each agent's next claim is `401` and the agent is
+  `suspended:steward_inactive`.
+- Re-activating the steward does NOT re-activate the agents (they are enabled
+  again only after the cause is gone). The agents' secrets expire in a day.

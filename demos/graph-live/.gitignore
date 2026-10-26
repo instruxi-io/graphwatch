@@ -1,3 +1,5 @@
 node_modules/
 dist/
 *.tsbuildinfo
+# run transcripts name real tenant, account and agent ids: never committed
+agent-team/recordings/
