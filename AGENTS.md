@@ -1,17 +1,18 @@
-# AGENTS.md: working in enforcer-graph-demos
+# AGENTS.md: working in graphwatch
 
 One page. Read it once, then work.
 
 ## What this repository is
 
-Two viewers for a plan held in Enforcer Graph, extracted from the service's own
-tree so they can be read, run and changed without the service:
+graphwatch, a command-line client for a plan held in Enforcer Graph, extracted
+from the service's own tree so it can be read, run and changed without the
+service, plus its demos:
 
-- `graphwatch/`: a terminal viewer in Go. Standard library only, on purpose.
-  `go run . --demo --layout mycelium` is an offline demo that needs no API and
-  no key; `--graph <id>` watches a real graph; `--demo` alone creates and works
-  one in your workspace.
-- `graph-live/`: a browser viewer in React. Watch mode reads and listens and
+- the repository root: `graphwatch`, a Go module (`github.com/instruxi-io/graphwatch`).
+  Standard library only, on purpose. `go run . --demo --layout mycelium` is an
+  offline demo that needs no API and no key; `--graph <id>` watches a real
+  graph; `--demo` alone creates and works one in your workspace.
+- `demos/graph-live/`: a browser viewer in React. Watch mode reads and listens and
   never writes. Demo mode creates a `demo-<scenario>-<time>` graph and drives
   it through the API as a set of harnesses would.
 
@@ -21,8 +22,8 @@ edges flipped so work flows down and out, heat for activity.
 ## Run and verify
 
 ```bash
-cd graphwatch && go build ./... && go vet ./... && go test ./...
-cd graph-live && GITHUB_TOKEN=$(gh auth token) npm ci && npm run typecheck && npm run build
+go build ./... && go vet ./... && go test ./...
+cd demos/graph-live && GITHUB_TOKEN=$(gh auth token) npm ci && npm run typecheck && npm run build
 ```
 
 `npm run build` needs no API key. `npm run dev` refuses to start without
@@ -30,9 +31,9 @@ cd graph-live && GITHUB_TOKEN=$(gh auth token) npm ci && npm run typecheck && np
 real API and adds the key there, so the key never reaches the bundle or the
 browser. Do not move the key into client code.
 
-The golden tests under `graphwatch/` compare the layered layout (four frames)
+The golden tests at the root compare the layered layout (four frames)
 and the mycelium demo frames (mid-growth and settled, particles removed) against
-text files in `graphwatch/testdata/`. Growth is seeded from node ids with no clock and no
+text files in `testdata/`. Growth is seeded from node ids with no clock and no
 randomness; if you change what is drawn, regenerate the goldens on purpose
 (`go test ./... -run GoldenPinned -update`)
 and say so in the commit.
@@ -40,8 +41,8 @@ and say so in the commit.
 ## Rules that are not obvious
 
 1. **A `requires` edge points FROM the dependent TO its prerequisite.** Both
-   viewers flip it once, in one place (`graphwatch/layout.go`,
-   `graph-live/src/live.ts`). Flip it anywhere else and arrows reverse silently.
+   viewers flip it once, in one place (`layout.go`,
+   `demos/graph-live/src/live.ts`). Flip it anywhere else and arrows reverse silently.
 2. **Draw the server's `work_state`; never re-derive it** from status and edges.
    The service computes it in one SQL function and the viewers would disagree
    with it in exactly the cases that matter (reclaims, verifying, held).
@@ -65,7 +66,7 @@ and say so in the commit.
 9. **Navigation commands are read-only.** Every `graphwatch` command other than
    `--demo`, `decide`, `resolve` and `attend` issues GET only (`decide` and
    `resolve` record an answer with one POST, and `attend` posts the same two
-   when you type an answer; none writes unless you run it that way); each lives in `graphwatch/cmd_<name>.go` and
+   when you type an answer; none writes unless you run it that way); each lives in `cmd_<name>.go` and
    registers itself from `init()`.
 
 ## Credentials
@@ -88,14 +89,14 @@ write scopes (graph-live's driver claims, heartbeats and completes runs).
   the published hooks, nothing else.
 - Comments say why, not what. The existing files are the register to match.
 - A change to what is drawn gets a golden test or a screenshot in the PR.
-- Scenarios live in `graph-live/src/scenarios/<name>.ts` with an id, title,
+- Scenarios live in `demos/graph-live/src/scenarios/<name>.ts` with an id, title,
   one-line description, `build()` and `drive()`. Add one by adding a file and
   registering it in `index.ts`.
 
 ## Where the rest is
 
 - The `enforcer` Claude Code plugin, install and sign-in:
-  https://github.com/instruxi-io/claude-plugins
+  https://github.com/instruxi-io/agent-plugins
 - The graph service and the hook packages are private to the organisation. The
   two conventions that matter here: a `requires` edge points from the dependent
   to its prerequisite, and a loop is a set of runs, never an edge.

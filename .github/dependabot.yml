@@ -4,8 +4,8 @@ updates:
     directory: /
     schedule: {interval: weekly}
   - package-ecosystem: gomod
-    directory: /graphwatch
+    directory: /
     schedule: {interval: weekly}
   - package-ecosystem: npm
-    directory: /graph-live
+    directory: /demos/graph-live
     schedule: {interval: weekly}

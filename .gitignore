@@ -1,7 +1,7 @@
 node_modules/
 dist/
 *.tsbuildinfo
-graphwatch/graphwatch
+/graphwatch
 *.log
 .env
 .env.*
