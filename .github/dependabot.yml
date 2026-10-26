@@ -9,3 +9,8 @@ updates:
   - package-ecosystem: npm
     directory: /demos/graph-live
     schedule: {interval: weekly}
+    # react and react-dom must move together: one PR each leaves npm ci unable
+    # to resolve (ERESOLVE), as #48 and #50 did
+    groups:
+      react:
+        patterns: [react, react-dom, "@types/react", "@types/react-dom"]
