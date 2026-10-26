@@ -13,7 +13,7 @@
     "@instruxi-io/graph-hooks": "0.1.266",
     "@instruxi-io/hooks-shared": "0.1.266",
     "@tanstack/react-query": "^5.103.2",
-    "@xyflow/react": "^12.11.6",
+    "@xyflow/react": "^12.12.0",
     "elkjs": "^0.12.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1"
