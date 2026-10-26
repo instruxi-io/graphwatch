@@ -8,7 +8,7 @@ fetch or SSE code. Reads go through generated hooks and functions
 (`useGetGraph`, `useGetGraphSummary`, `queryNodes`, `listEdges`,
 `useListGraphs`, and for the drawer `useGetNode`, `useListNodeRuns` and
 `useListNodeObservations`). The demo driver's writes go through generated
-functions too. It's the browser sibling of `../graphwatch`. It stays small
+functions too. It's the browser sibling of [`graphwatch`](../../) (the CLI at this repository's root). It stays small
 on purpose: it draws the graph and drives demos, with no other panels.
 
 ```bash

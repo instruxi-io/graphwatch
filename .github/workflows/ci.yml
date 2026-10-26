@@ -12,18 +12,15 @@ permissions:
 jobs:
   graphwatch:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: graphwatch
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
-          go-version-file: graphwatch/go.mod
-      - run: test -z "$(gofmt -l .)"
+          go-version-file: go.mod
+      - run: test -z "$(gofmt -l $(git ls-files '*.go'))"
       - run: go build ./... && go vet ./... && go test ./...
 
-  graph-live:
+  demo-graph-live:
     # graph-live depends on @instruxi-io/graph-hooks, a private GitHub Packages
     # package. This public repo's GITHUB_TOKEN cannot read it (npm E403), so the
     # job builds only when a HOOKS_PACKAGES_TOKEN secret with read:packages is
@@ -33,7 +30,7 @@ jobs:
       HOOKS_PACKAGES_TOKEN: ${{ secrets.HOOKS_PACKAGES_TOKEN }}
     defaults:
       run:
-        working-directory: graph-live
+        working-directory: demos/graph-live
     steps:
       - if: env.HOOKS_PACKAGES_TOKEN == ''
         working-directory: .
