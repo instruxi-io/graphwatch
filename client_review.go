@@ -43,6 +43,11 @@ type apiVerdictRef struct {
 type resolveRequest struct {
 	Action string `json:"action"`
 	Note   string `json:"note,omitempty"`
+	// Into is the observation a merge folds into; Text answers an a2a
+	// input_required item; ProfileID routes an undecided node.
+	Into      string `json:"into,omitempty"`
+	Text      string `json:"text,omitempty"`
+	ProfileID string `json:"profile_id,omitempty"`
 }
 
 // resolveResponse is the service's record of the resolution.

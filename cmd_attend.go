@@ -21,7 +21,9 @@ func init() {
 
 const attendUsage = "usage: graphwatch attend [--poll secs] <graph>"
 
-const attendHelp = `<n> approve|reject|override [note...]   answer review item n (override needs a note)
+const attendHelp = `<n> <action> [note...]   answer review item n with any action its kind takes (shown beside it);
+                        override needs a note; merge <id>, reply <text>, approve profile=<id> take a value
+                        e.g. 2 rejudge | 3 keep | 3 merge <obs-id> | 4 dismiss | 5 retry | 6 reply <text>
 <n> decide <decision> [note...]         decide gate n
 list                                    show what needs you
 help                                    this text
@@ -154,7 +156,7 @@ func printAttendItem(w io.Writer, n int, e inboxEntry) {
 		fmt.Fprintln(w, line)
 		return
 	}
-	fmt.Fprintf(w, "  %d  %s  %s  %s  %s\n", n, inboxFields(e)[0], clean(e.Node), e.Age, clean(e.Detail))
+	fmt.Fprintf(w, "  %d  %s  %s  %s  %s  [%s]\n", n, inboxFields(e)[0], clean(e.Node), e.Age, clean(e.Detail), strings.Join(actionsForKind(e.Item), "|"))
 }
 
 // attendLine runs one line of input and reports false when the person quit.
@@ -196,8 +198,25 @@ func attendLine(ctx context.Context, env *cliEnv, graphID, line string, current 
 	// Answers go through runResolve and runDecide, the code behind the
 	// resolve and decide commands, so refusals read the same everywhere.
 	switch {
-	case item.Type == "review" && (f[1] == "approve" || f[1] == "reject" || f[1] == "override"):
-		runResolve(ctx, noteEnv(env, strings.Join(f[2:], " ")), []string{graphID, item.ID, f[1]})
+	case item.Type == "review" && f[1] != "decide":
+		// Any word goes to the service, which answers invalid_action for a
+		// wrong one. merge takes the target id, reply takes the text.
+		rest := f[2:]
+		args := []string{graphID, item.ID, f[1]}
+		cenv := noteEnv(env, strings.Join(rest, " "))
+		switch f[1] {
+		case "merge":
+			if len(rest) == 0 {
+				fmt.Fprintln(env.errOut, "merge needs the observation id: "+strconv.Itoa(n)+" merge <id>")
+				return true
+			}
+			cenv = noteEnv(env, strings.Join(rest[1:], " "))
+			args = append(args, "--into", rest[0])
+		case "reply":
+			cenv = noteEnv(env, "")
+			args = append(args, "--text", strings.Join(rest, " "))
+		}
+		runResolve(ctx, cenv, args)
 	case item.Type == "gate" && f[1] == "decide":
 		if len(f) < 3 {
 			fmt.Fprintln(env.errOut, "decide needs a decision")
@@ -209,7 +228,7 @@ func attendLine(ctx context.Context, env *cliEnv, graphID, line string, current 
 		}
 		runDecide(ctx, noteEnv(env, strings.Join(f[3:], " ")), []string{graphID, item.ID, f[2]})
 	case item.Type == "review":
-		fmt.Fprintf(env.errOut, "item %d is a review item: %d approve|reject|override [note...]\n", n, n)
+		fmt.Fprintf(env.errOut, "item %d is a review item: %d <action> [note...] (%s)\n", n, n, strings.Join(actionsForKind(item.Item), "|"))
 	default:
 		fmt.Fprintf(env.errOut, "item %d is a gate: %d decide <decision> [note...]\n", n, n)
 	}

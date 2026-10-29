@@ -110,10 +110,6 @@ func TestResolveRefusals(t *testing.T) {
 	if len(f.bodies) != 0 {
 		t.Errorf("override without a note reached the server: %v", f.bodies)
 	}
-	_, _, code = runCLI(t, f, "resolve", "g1", "run:aaaa", "maybe")
-	if code != 2 {
-		t.Errorf("unknown action: code %d", code)
-	}
 
 	f.posts = map[string]fakeReply{"/graphs/g1/review/run:aaaaaaaa-1111/resolve": {403, map[string]any{
 		"success": false, "error": map[string]any{"code": "forbidden", "message": "no"}}}}
@@ -301,5 +297,68 @@ func TestInboxKindJSONIsValid(t *testing.T) {
 	jout, _, _ := runCLI(t, f2, "inbox", "g1", "--json", "--kind", "gate")
 	if strings.TrimSpace(jout) != "[]" {
 		t.Errorf("empty filtered json: %q", jout)
+	}
+}
+
+func resolveOK(action, kind string) map[string]fakeReply {
+	return map[string]fakeReply{"/graphs/g1/review/run:aaaaaaaa-1111/resolve": {200, map[string]any{
+		"success": true, "data": map[string]any{"action": action, "item_id": "run:aaaaaaaa-1111", "kind": kind},
+	}}}
+}
+
+func lastResolveBody(t *testing.T, f *fakeAPI) resolveRequest {
+	t.Helper()
+	if len(f.bodies) != 1 {
+		t.Fatalf("bodies %v", f.bodies)
+	}
+	var got resolveRequest
+	if err := json.Unmarshal([]byte(f.bodies[0]), &got); err != nil {
+		t.Fatal(err)
+	}
+	return got
+}
+
+func TestResolvePassesRejudgeKeepAndMerge(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		args []string
+		want resolveRequest
+	}{
+		{"rejudge on a judge hold", []string{"rejudge"}, resolveRequest{Action: "rejudge"}},
+		{"keep on an observation", []string{"keep", "--note", "still true"}, resolveRequest{Action: "keep", Note: "still true"}},
+		{"merge with into", []string{"merge", "--into", "obs-7"}, resolveRequest{Action: "merge", Into: "obs-7"}},
+		{"reply with text", []string{"reply", "--text", "yes"}, resolveRequest{Action: "reply", Text: "yes"}},
+		{"approve with profile", []string{"approve", "--profile", "p1"}, resolveRequest{Action: "approve", ProfileID: "p1"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newFakeAPI(t, inboxRoutes())
+			f.posts = resolveOK(tc.args[0], "verdict_pending")
+			args := append([]string{"resolve", "g1", "run:aaaa"}, tc.args...)
+			out, errOut, code := runCLI(t, f, args...)
+			if code != 0 {
+				t.Fatalf("code %d:\n%s\n%s", code, out, errOut)
+			}
+			if got := lastResolveBody(t, f); got != tc.want {
+				t.Errorf("body %+v, want %+v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestResolveServerInvalidActionPrintsKind(t *testing.T) {
+	f := newFakeAPI(t, inboxRoutes())
+	f.posts = map[string]fakeReply{"/graphs/g1/review/run:aaaaaaaa-1111/resolve": {400, map[string]any{
+		"success": false, "error": map[string]any{"code": "invalid_action", "message": "dismiss is not valid here"}}}}
+	_, errOut, code := runCLI(t, f, "resolve", "g1", "run:aaaa", "dismiss")
+	if code != 1 || !strings.Contains(errOut, "invalid_action") || !strings.Contains(errOut, "dismiss is not valid here") || !strings.Contains(errOut, "verdict_pending") {
+		t.Errorf("code %d, %q", code, errOut)
+	}
+}
+
+func TestInboxShowsActionsPerKind(t *testing.T) {
+	f := newFakeAPI(t, inboxRoutes())
+	out, _, _ := runCLI(t, f, "inbox", "g1")
+	if !strings.Contains(out, "ACTIONS") || !strings.Contains(out, "approve|reject|rejudge") {
+		t.Errorf("no actions shown:\n%s", out)
 	}
 }

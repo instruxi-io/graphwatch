@@ -221,6 +221,9 @@ func runHelp(args []string, stdout, stderr io.Writer) int {
 		}
 		fmt.Fprintln(stdout, "flags:")
 		fs.PrintDefaults()
+		if cmd.name == "resolve" {
+			fmt.Fprint(stdout, resolveHelp)
+		}
 		if notes := commandNotes[cmd.name]; notes != "" {
 			fmt.Fprintf(stdout, "\n%s command flags (read from the arguments after the graph):\n%s", cmd.name, notes)
 		}
