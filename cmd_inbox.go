@@ -16,16 +16,33 @@ func init() {
 	register("inbox", "list everything that needs a person: open review items and ready gates: inbox <graph> [--json] [--watch secs] [--kind review|gate]", runInbox)
 	commandNotes["inbox"] = "  --watch secs\n    \tre-read every secs seconds (a whole number, 1 or more) and print only changes: + for a new item, - for one that is gone; not valid with --json\n" +
 		"  --kind review|gate\n    \tlist only open review items or only ready gates; any other value exits 2\n"
-	register("resolve", "answer a review item (a write): resolve <graph> <item> approve|reject|override [--note text]", runResolve)
+	register("resolve", "answer a review item (a write): resolve <graph> <item> <action> [--note text] [--into id] [--text reply] [--profile id]", runResolve)
 	commandFlags["resolve"] = func(fs *flag.FlagSet) {
 		fs.String("note", "", "why; required for override")
+		fs.String("into", "", "merge: the observation to merge into")
+		fs.String("text", "", "reply: the answer text")
+		fs.String("profile", "", "approve on route_undecided: the profile id")
 	}
 }
 
 const (
-	inboxUsage   = "usage: graphwatch inbox <graph> [--json] [--watch secs] [--kind review|gate]"
-	resolveUsage = "usage: graphwatch resolve <graph> <item> approve|reject|override [--note text]"
+	inboxUsage = "usage: graphwatch inbox <graph> [--json] [--watch secs] [--kind review|gate]"
 )
+
+const resolveUsage = "usage: graphwatch resolve <graph> <item> <action> [--note text] [--into id] [--text reply] [--profile id]"
+
+// resolveHelp groups the kinds by the words they take. Display only: the
+// service decides what is valid and answers 400 invalid_action otherwise.
+const resolveHelp = `
+actions, by review item kind (the service decides; a wrong word prints its 400):
+  judge holds and verdicts   approve, reject, accept, rejudge (ask the judges again)
+  observations, contradictions   keep, merge --into <id>, discard; keep_a, keep_b, keep_both
+  uncertain outputs          dismiss
+  decided validations        override (--note required)
+  exhausted rejections       retry, approve
+  a2a input required         reply --text <answer>, fail
+  undecided routes           approve --profile <id>, reject
+`
 
 // inboxEntry is one line of the inbox, shaped for both the table and --json.
 type inboxEntry struct {
@@ -200,8 +217,15 @@ func runInbox(ctx context.Context, env *cliEnv, args []string) int {
 	for i, e := range entries {
 		rows[i] = append([]string{fmt.Sprint(i + 1)}, inboxFields(e)...)
 	}
-	env.table([]string{"#", "KIND", "ID", "NODE", "AGE", "DETAIL"}, rows)
-	fmt.Fprintln(env.out, "\nanswer a review item: graphwatch resolve <graph> <item> approve|reject|override\ndecide a gate:        graphwatch decide <graph> <node> <decision>")
+	for i, e := range entries {
+		acts := ""
+		if e.Type == "review" {
+			acts = strings.Join(actionsForKind(e.Item), "|")
+		}
+		rows[i] = append(rows[i], acts)
+	}
+	env.table([]string{"#", "KIND", "ID", "NODE", "AGE", "DETAIL", "ACTIONS"}, rows)
+	fmt.Fprintln(env.out, "\nanswer a review item: graphwatch resolve <graph> <item> <action>  (actions are listed per item)\ndecide a gate:        graphwatch decide <graph> <node> <decision>")
 	if watch > 0 {
 		return watchInbox(ctx, env, graphID, kind, entries, watch)
 	}
@@ -313,14 +337,25 @@ func followInbox(ctx context.Context, out, errOut io.Writer, prev []inboxEntry, 
 func runResolve(ctx context.Context, env *cliEnv, args []string) int {
 	fs := flag.NewFlagSet("resolve", flag.ContinueOnError)
 	fs.SetOutput(env.errOut)
+	fs.Usage = func() {
+		fmt.Fprint(env.errOut, resolveUsage+resolveHelp)
+	}
 	note := fs.String("note", "", "")
-	if f := env.fs.Lookup("note"); f != nil && f.Value.String() != "" {
-		*note = f.Value.String()
+	into := fs.String("into", "", "")
+	text := fs.String("text", "", "")
+	profile := fs.String("profile", "", "")
+	for name, dst := range map[string]*string{"note": note, "into": into, "text": text, "profile": profile} {
+		if f := env.fs.Lookup(name); f != nil && f.Value.String() != "" {
+			*dst = f.Value.String()
+		}
 	}
 	// Flags may follow the positional arguments.
 	var pos []string
 	for len(args) > 0 {
 		if err := fs.Parse(args); err != nil {
+			if errors.Is(err, flag.ErrHelp) {
+				return exitOK
+			}
 			return exitUsage
 		}
 		args = fs.Args()
@@ -334,10 +369,8 @@ func runResolve(ctx context.Context, env *cliEnv, args []string) int {
 		return exitUsage
 	}
 	graphID, want, action := pos[0], pos[1], pos[2]
-	switch action {
-	case "approve", "reject", "override":
-	default:
-		fmt.Fprintf(env.errOut, "graphwatch: unknown action %q\n%s\n", action, resolveUsage)
+	if strings.HasPrefix(action, "-") {
+		fmt.Fprintf(env.errOut, "graphwatch: %q is not an action\n%s\n", action, resolveUsage)
 		return exitUsage
 	}
 	if action == "override" && strings.TrimSpace(*note) == "" {
@@ -364,11 +397,18 @@ func runResolve(ctx context.Context, env *cliEnv, args []string) int {
 		return exitRuntime
 	}
 
-	resp, err := env.client.resolveReview(ctx, graphID, found.ID, resolveRequest{Action: action, Note: *note})
+	resp, err := env.client.resolveReview(ctx, graphID, found.ID, resolveRequest{Action: action, Note: *note, Into: *into, Text: *text, ProfileID: *profile})
 	if err != nil {
 		var ae *apiError
 		if errors.As(err, &ae) {
 			switch {
+			case ae.status == 400 && ae.code == "invalid_action":
+				msg := ae.detail
+				if msg == "" {
+					msg = ae.msg
+				}
+				fmt.Fprintf(env.errOut, "graphwatch: 400 invalid_action: %s (item kind: %s; usually takes: %s)\n", msg, found.Kind, strings.Join(actionsForKind(found.Kind), "|"))
+				return exitRuntime
 			case ae.status == 403:
 				fmt.Fprintln(env.errOut, "you are not an arbitrator on this graph")
 				return exitRuntime
@@ -433,3 +473,23 @@ func orUnknown(s string) string {
 	}
 	return s
 }
+
+// kindActions is what the service accepts per review item kind. It is used
+// only to show and to document; graphwatch never refuses on it, because the
+// service answers 400 invalid_action for a wrong word.
+var kindActions = map[string][]string{
+	"low_confidence_rejection": {"approve", "reject", "rejudge"},
+	"verdict_pending":          {"approve", "reject", "rejudge"},
+	"unverified_held":          {"approve", "reject", "rejudge"},
+	"verdict_rejected":         {"accept", "rejudge", "approve"},
+	"verdict_unverified":       {"accept", "rejudge", "approve"},
+	"validation_decided":       {"override"},
+	"observation_review":       {"keep", "merge", "discard"},
+	"contradiction":            {"keep_a", "keep_b", "keep_both"},
+	"output_uncertain":         {"dismiss"},
+	"rejections_exhausted":     {"retry", "approve"},
+	"a2a_input_required":       {"reply", "fail"},
+	"route_undecided":          {"approve", "reject"},
+}
+
+func actionsForKind(kind string) []string { return kindActions[kind] }
