@@ -81,7 +81,7 @@ func TestInspectorSelectionMovesNearest(t *testing.T) {
 }
 
 func TestInspectorHeldMarker(t *testing.T) {
-	if !isHeld("verifying", false) || !isHeld("running", true) || isHeld("done", false) {
+	if !isHeld("verifying") || !isHeld("needs_review") || isHeld("running") || isHeld("done") {
 		t.Error("isHeld rule")
 	}
 	v := newView()
@@ -114,5 +114,19 @@ func TestInspectorNoGoldenChange(t *testing.T) {
 	}
 	if run(nil) != run(newInspector()) {
 		t.Error("an idle inspector changed the frame")
+	}
+}
+
+// A done node named by an open review item is not held: the panel says there
+// is something to review, and the canvas draws no hold marker.
+func TestInspectorReviewOnDoneNodeIsNotHeld(t *testing.T) {
+	n := inspNode()
+	n.Status, n.WorkState = "done", "done"
+	got := strings.Join(inspectorLines(inspState{Node: n, Held: isHeld(n.Status), Review: true, Now: time.Unix(1000, 0)}, 80), "\n")
+	if strings.Contains(got, "HELD") {
+		t.Errorf("done node shown as held:\n%s", got)
+	}
+	if !strings.Contains(got, "open review item") {
+		t.Errorf("review item not shown:\n%s", got)
 	}
 }

@@ -25,7 +25,8 @@ type inspState struct {
 	Route    *apiRoute
 	RouteErr string
 	RunErr   string
-	Held     bool // an open review item names this node
+	Held     bool // the node waits on a verdict or a person (status verifying / needs_review)
+	Review   bool // an open review item names this node; it holds nothing by itself
 	Loading  bool
 	Now      time.Time
 }
@@ -43,8 +44,14 @@ func parseInspNodeData(raw json.RawMessage) inspNodeData {
 	return d
 }
 
-// isHeld is the marker rule: verifying, or an open review item.
-func isHeld(status string, review bool) bool { return status == "verifying" || review }
+// isHeld is the marker rule, from the server's own status: verifying (a
+// verdict, its judges or an arbitrator) or needs_review (a person must act).
+// An open review item alone is NOT a hold: observation reviews and
+// contradictions hold nothing back, and the kinds that do (verdict_pending,
+// low_confidence_rejection, rejections_exhausted, …) already put the node in
+// one of these two statuses. Counting every review item as held showed
+// "HELD 9" on a finished graph with nothing waiting.
+func isHeld(status string) bool { return status == "verifying" || status == "needs_review" }
 
 // selectNearest returns the node nearest to cur in dir (up, down, left, right)
 // by screen position. Along-axis distance counts once, cross-axis twice, so a
@@ -99,15 +106,15 @@ func selectNearest(pos map[string][2]float64, cur, dir string) string {
 	return best
 }
 
-// inspector holds the selection, the cache and the held set. The view reads it
+// inspector holds the selection, the cache and the review set. The view reads it
 // each frame; the key handler and the fetchers write it.
 type inspector struct {
-	mu    sync.Mutex
-	open  bool
-	sel   string
-	pos   map[string][2]float64
-	held  map[string]bool // nodes with an open review item
-	cache map[string]*inspEntry
+	mu     sync.Mutex
+	open   bool
+	sel    string
+	pos    map[string][2]float64
+	review map[string]bool // nodes with an open review item (not a hold)
+	cache  map[string]*inspEntry
 	// load fetches one node's state; replaced in tests.
 	load func(ctx context.Context, nodeID string) inspState
 	ctx  context.Context
@@ -121,7 +128,7 @@ type inspEntry struct {
 }
 
 func newInspector() *inspector {
-	return &inspector{pos: map[string][2]float64{}, held: map[string]bool{}, cache: map[string]*inspEntry{}, now: time.Now}
+	return &inspector{pos: map[string][2]float64{}, review: map[string]bool{}, cache: map[string]*inspEntry{}, now: time.Now}
 }
 
 var arrowKeys = map[string]string{"up": "up", "k": "up", "down": "down", "j": "down", "left": "left", "h": "left", "right": "right", "l": "right"}
@@ -193,9 +200,9 @@ func (in *inspector) fetchLocked(id string, force bool) {
 	}()
 }
 
-func (in *inspector) setHeld(h map[string]bool) {
+func (in *inspector) setReview(h map[string]bool) {
 	in.mu.Lock()
-	in.held = h
+	in.review = h
 	in.mu.Unlock()
 }
 
@@ -212,7 +219,8 @@ func (in *inspector) snapshot() (inspState, bool) {
 		return inspState{Loading: true}, true
 	}
 	st := e.st
-	st.Held = st.Held || in.held[in.sel]
+	st.Held = isHeld(st.Node.Status)
+	st.Review = in.review[in.sel]
 	// An expired entry is shown as is while the refetch runs; the view asks again.
 	if !e.pending && (e.at.IsZero() || in.now().Sub(e.at) >= inspectorTTL) {
 		in.fetchLocked(in.sel, false)
@@ -260,7 +268,7 @@ func loadFromAPI(c *client, graphID string) func(context.Context, string) inspSt
 	}
 }
 
-// startInspector wires the inspector to a watched graph: the loader, the held
+// startInspector wires the inspector to a watched graph: the loader, the review
 // set (open review items, refreshed on every event and on a slow tick) and the
 // stream hook. It only reads.
 func startInspector(ctx context.Context, c *client, graphID string, v *view, tick <-chan struct{}) {
@@ -277,7 +285,7 @@ func startInspector(ctx context.Context, c *client, graphID string, v *view, tic
 						h[it.NodeID] = true
 					}
 				}
-				in.setHeld(h)
+				in.setReview(h)
 			}
 			select {
 			case <-ctx.Done():

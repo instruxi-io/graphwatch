@@ -14,7 +14,7 @@ import (
 // segment is simply left out.
 type headerState struct {
 	Counts     map[string]int // by_work_state of the summary
-	Review     *int           // open review items
+	Review     *int           // open review items: they need a person, they hold nothing (held is Counts["held"])
 	Epoch      *int           // current epoch
 	Epochs     *int           // epochs so far; Epoch of Epochs when replayed
 	Recruiting *recruitingInfo
@@ -56,11 +56,9 @@ func headerLine(s headerState, width int) string {
 		segs = append(segs, strings.Join(parts, " · "))
 	}
 	if s.Review != nil {
-		if *s.Review > 0 {
-			segs = append(segs, "HELD "+strconv.Itoa(*s.Review))
-		} else {
-			segs = append(segs, "0 held")
-		}
+		// Not "held": the server's held count is the work_state segment above.
+		// Most review items (observation dedupe, contradictions) block nothing.
+		segs = append(segs, strconv.Itoa(*s.Review)+" to review")
 	}
 	if r := s.Recruiting; r != nil {
 		if r.Recruiting.Open {

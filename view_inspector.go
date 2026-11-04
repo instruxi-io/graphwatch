@@ -23,7 +23,10 @@ func inspectorLines(st inspState, width int) []string {
 		state += " · work_state " + n.WorkState
 	}
 	if st.Held {
-		state += " · HELD (verifying or open review)"
+		state += " · HELD (waiting on a verdict or a person)"
+	}
+	if st.Review {
+		state += " · open review item"
 	}
 	add("%s", state)
 	d := parseInspNodeData(n.Data)
@@ -141,13 +144,13 @@ func (v *view) drawInspector(c *canvas, w, h int, ids []string) {
 	amber, white := rgb{250, 190, 60}, rgb{240, 242, 250}
 	pos := map[string][2]float64{}
 	in.mu.Lock()
-	sel, held := in.sel, in.held
+	sel := in.sel
 	in.mu.Unlock()
 	for _, id := range ids {
 		vn := v.vis[id]
 		pos[id] = [2]float64{vn.x, vn.y}
 		cx, cy := int(vn.x+0.5), int(vn.y+0.5)
-		if isHeld(v.nodes[id].status, held[id]) {
+		if isHeld(v.nodes[id].status) {
 			c.put(cx-1, cy, "⟨", amber, true)
 			c.put(cx+1, cy, "⟩", amber, true)
 		}
