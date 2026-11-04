@@ -11,7 +11,7 @@ import (
 )
 
 func init() {
-	register("review", "list the human review items holding a graph: review <graph> [--open|--all] | review show <graph> <item>", runReview)
+	register("review", "list the human review items on a graph (most hold nothing): review <graph> [--open|--all] | review show <graph> <item>", runReview)
 }
 
 const reviewUsage = "usage: graphwatch review <graph> [--open|--all]\n       graphwatch review show <graph> <item>"

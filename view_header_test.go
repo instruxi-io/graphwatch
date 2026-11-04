@@ -34,14 +34,18 @@ func TestHeaderLineSegments(t *testing.T) {
 	}
 }
 
-func TestHeaderHeldBadge(t *testing.T) {
+// Open review items are shown as what they are. They are not holds: the held
+// count is the server's work_state segment (2026-11-04: a finished graph with
+// nine observation-dedupe items read "HELD 9").
+func TestHeaderReviewIsNotHeld(t *testing.T) {
 	s := fullState()
-	s.Review = ip(3)
-	if l := headerLine(s, 400); !strings.Contains(l, "HELD 3") {
-		t.Errorf("no badge: %q", l)
+	s.Review = ip(9)
+	l := headerLine(s, 400)
+	if !strings.Contains(l, "9 to review") {
+		t.Errorf("no review count: %q", l)
 	}
-	if l := headerLine(fullState(), 400); strings.Contains(l, "HELD") {
-		t.Errorf("badge with zero holds: %q", l)
+	if strings.Contains(l, "HELD") {
+		t.Errorf("review items shown as held: %q", l)
 	}
 }
 
@@ -93,10 +97,10 @@ func TestHeaderNoOverlaysFlag(t *testing.T) {
 	plain := v.frame(120, 30, 0.1)
 	v.ov = &overlays{}
 	v.ov.set(func(s *headerState) { s.Review = ip(2) })
-	if with := v.frame(120, 30, 0.1); with == plain || !strings.Contains(with, "HELD 2") {
+	if with := v.frame(120, 30, 0.1); with == plain || !strings.Contains(with, "2 to review") {
 		t.Error("overlay line not drawn")
 	}
-	if strings.Contains(plain, "HELD") {
+	if strings.Contains(plain, "to review") {
 		t.Error("plain header has overlay")
 	}
 }
