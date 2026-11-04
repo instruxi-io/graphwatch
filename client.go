@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -23,6 +24,63 @@ type client struct {
 	// slowNote, when set, hears "connecting to <host>..." if a request is still
 	// waiting after slowAfter, so a black-holed address does not look like a hang.
 	slowNote io.Writer
+
+	// authMu guards the signed-out backoff. A 401 that survives the one
+	// refresh retry means the credential is dead (expired key, lapsed sign-in),
+	// and the watch view's pollers would otherwise resend it every tick for as
+	// long as the terminal stays open. So the client refuses locally until
+	// authUntil, doubling authWait up to authBackoffMax, then tries once more
+	// with fresh headers (a re-login recovers on its own). Any success resets.
+	authMu    sync.Mutex
+	authUntil time.Time
+	authWait  time.Duration
+	authErr   *apiError
+	now       func() time.Time // nil = time.Now; tests set it
+}
+
+const (
+	authBackoffMin = 30 * time.Second
+	authBackoffMax = 5 * time.Minute
+)
+
+func (c *client) clock() time.Time {
+	if c.now != nil {
+		return c.now()
+	}
+	return time.Now()
+}
+
+// signedOut reports the held 401 while the backoff runs, and whether the next
+// request should start from fresh headers because a backoff just ended.
+func (c *client) signedOut() (held *apiError, fresh bool) {
+	c.authMu.Lock()
+	defer c.authMu.Unlock()
+	if c.authErr == nil {
+		return nil, false
+	}
+	if c.clock().Before(c.authUntil) {
+		return c.authErr, false
+	}
+	return nil, true
+}
+
+// noteAuth records a request's outcome for the backoff: status 401 starts or
+// lengthens it, anything the server answered otherwise clears it.
+func (c *client) noteAuth(status int, err *apiError) {
+	c.authMu.Lock()
+	defer c.authMu.Unlock()
+	if status != http.StatusUnauthorized {
+		c.authErr, c.authWait = nil, 0
+		return
+	}
+	switch {
+	case c.authWait == 0:
+		c.authWait = authBackoffMin
+	case c.authWait < authBackoffMax:
+		c.authWait = min(c.authWait*2, authBackoffMax)
+	}
+	c.authUntil = c.clock().Add(c.authWait)
+	c.authErr = err
 }
 
 // defaultTimeout bounds one API request; --timeout raises or lowers it.
@@ -63,6 +121,10 @@ func (c *client) do(ctx context.Context, method, path string, body, out any) err
 	// One retry on 401 with fresh headers: an OAuth access token can expire
 	// mid-session, and the helper refreshes it. The request was refused, so
 	// resending it cannot apply anything twice.
+	held, fresh := c.signedOut()
+	if held != nil {
+		return held
+	}
 	var resp *http.Response
 	for attempt := 0; attempt < 2; attempt++ {
 		var rd io.Reader
@@ -73,8 +135,12 @@ func (c *client) do(ctx context.Context, method, path string, body, out any) err
 		if err != nil {
 			return err
 		}
-		if err := c.authorize(ctx, req, attempt > 0); err != nil {
-			return &apiError{status: http.StatusUnauthorized, msg: err.Error()}
+		if err := c.authorize(ctx, req, fresh || attempt > 0); err != nil {
+			// No headers to send (the helper failed or says signed out): a 401
+			// for the backoff too, so the pollers do not rerun the helper every tick.
+			ae := &apiError{status: http.StatusUnauthorized, msg: err.Error()}
+			c.noteAuth(http.StatusUnauthorized, ae)
+			return ae
 		}
 		req.Header.Set("Content-Type", "application/json")
 		stop := c.noteIfSlow()
@@ -96,9 +162,12 @@ func (c *client) do(ctx context.Context, method, path string, body, out any) err
 			body = body[:200] + "…"
 		}
 		code, detail := parseErrorEnvelope(b)
-		return &apiError{status: resp.StatusCode, code: code, detail: detail,
+		ae := &apiError{status: resp.StatusCode, code: code, detail: detail,
 			msg: fmt.Sprintf("%s %s: %d %s", method, path, resp.StatusCode, body)}
+		c.noteAuth(resp.StatusCode, ae)
+		return ae
 	}
+	c.noteAuth(resp.StatusCode, nil)
 	if out != nil {
 		return json.Unmarshal(b, out)
 	}
