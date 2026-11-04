@@ -185,9 +185,9 @@ func watchLoop(ctx context.Context, cancel context.CancelFunc, c *client, g apiG
 		default:
 		}
 	}
+	pace := newPacer()
+	graphTick := pace.subscribe()
 	go func() {
-		t := time.NewTicker(10 * time.Second) // a safety net, not the clock
-		defer t.Stop()
 		for {
 			ns, err1 := c.nodes(ctx, *graphID)
 			es, err2 := c.edges(ctx, *graphID)
@@ -198,7 +198,7 @@ func watchLoop(ctx context.Context, cancel context.CancelFunc, c *client, g apiG
 			case <-ctx.Done():
 				return
 			case <-refresh:
-			case <-t.C:
+			case <-graphTick: // a safety net, not the clock
 			}
 		}
 	}()
@@ -207,9 +207,10 @@ func watchLoop(ctx context.Context, cancel context.CancelFunc, c *client, g apiG
 	if !noOverlays {
 		ov = &overlays{}
 		v.ov = ov
-		ovPoke = startOverlays(ctx, c, *graphID, ov)
+		ovPoke = startOverlays(ctx, c, *graphID, ov, pace.subscribe())
 	}
 	go c.stream(ctx, *graphID, func(ev sseEvent) {
+		pace.frame()
 		v.event(ev)
 		if ev.Event != ":" {
 			poke()
@@ -219,6 +220,7 @@ func watchLoop(ctx context.Context, cancel context.CancelFunc, c *client, g apiG
 			}
 		}
 	}, func(s string) {
+		pace.linkStatus(s)
 		v.setLink(s)
 		if ov != nil {
 			ov.link(s)
@@ -227,7 +229,8 @@ func watchLoop(ctx context.Context, cancel context.CancelFunc, c *client, g apiG
 
 	// The inspector reads its own keys when no picker feeds them.
 	v.insp = newInspector()
-	startInspector(ctx, c, *graphID, v)
+	startInspector(ctx, c, *graphID, v, pace.subscribe())
+	go pace.run(ctx)
 	picker := keys != nil
 	if keys == nil {
 		if undo, err := sttyRaw(); err == nil {
