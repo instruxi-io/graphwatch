@@ -263,14 +263,12 @@ func loadFromAPI(c *client, graphID string) func(context.Context, string) inspSt
 // startInspector wires the inspector to a watched graph: the loader, the held
 // set (open review items, refreshed on every event and on a slow tick) and the
 // stream hook. It only reads.
-func startInspector(ctx context.Context, c *client, graphID string, v *view) {
+func startInspector(ctx context.Context, c *client, graphID string, v *view, tick <-chan struct{}) {
 	in := v.insp
 	in.mu.Lock()
 	in.ctx, in.load = ctx, loadFromAPI(c, graphID)
 	in.mu.Unlock()
 	go func() {
-		t := time.NewTicker(10 * time.Second)
-		defer t.Stop()
 		for {
 			if items, err := c.reviewItems(ctx, graphID); err == nil {
 				h := map[string]bool{}
@@ -284,7 +282,7 @@ func startInspector(ctx context.Context, c *client, graphID string, v *view) {
 			select {
 			case <-ctx.Done():
 				return
-			case <-t.C:
+			case <-tick:
 			}
 		}
 	}()

@@ -169,19 +169,17 @@ func (o *overlays) refresh(ctx context.Context, c *client, graphID string) {
 	})
 }
 
-// overlayMinGap keeps event-driven refreshes from outrunning the 10 s poll.
+// overlayMinGap keeps event-driven refreshes from outrunning the poll.
 const overlayMinGap = 2 * time.Second
 
 // noOverlays is the --no-overlays flag.
 var noOverlays bool
 
-// startOverlays refreshes the header on the 10 s safety poll and, through the
+// startOverlays refreshes the header on the shared safety poll (pacer) and, through the
 // returned poke, on stream events, no more often than overlayMinGap.
-func startOverlays(ctx context.Context, c *client, graphID string, o *overlays) (poke func()) {
+func startOverlays(ctx context.Context, c *client, graphID string, o *overlays, tick <-chan struct{}) (poke func()) {
 	kick := make(chan struct{}, 1)
 	go func() {
-		t := time.NewTicker(10 * time.Second)
-		defer t.Stop()
 		for {
 			o.refresh(ctx, c, graphID)
 			select {
@@ -193,7 +191,7 @@ func startOverlays(ctx context.Context, c *client, graphID string, o *overlays) 
 					return
 				case <-time.After(overlayMinGap):
 				}
-			case <-t.C:
+			case <-tick:
 			}
 		}
 	}()
