@@ -51,6 +51,12 @@ func (h *helper) headers(ctx context.Context, fresh bool) (map[string]string, er
 	}
 	got, err := runHelper(ctx, h.cmd)
 	if err != nil {
+		// Drop the cache: it holds the headers the server just refused (fresh
+		// is only asked for after a 401). Keeping them meant a helper that
+		// could no longer run (a plugin update removed the version directory
+		// its path named) left graphwatch resending a dead token every tick
+		// for hours while the machine's own sign-in was fine.
+		h.cached = nil
 		return nil, err
 	}
 	h.cached = got

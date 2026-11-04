@@ -136,7 +136,11 @@ func (c *client) do(ctx context.Context, method, path string, body, out any) err
 			return err
 		}
 		if err := c.authorize(ctx, req, fresh || attempt > 0); err != nil {
-			return &apiError{status: http.StatusUnauthorized, msg: err.Error()}
+			// No headers to send (the helper failed or says signed out): a 401
+			// for the backoff too, so the pollers do not rerun the helper every tick.
+			ae := &apiError{status: http.StatusUnauthorized, msg: err.Error()}
+			c.noteAuth(http.StatusUnauthorized, ae)
+			return ae
 		}
 		req.Header.Set("Content-Type", "application/json")
 		stop := c.noteIfSlow()

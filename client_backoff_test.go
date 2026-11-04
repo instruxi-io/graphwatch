@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -106,5 +107,55 @@ func TestDeadCredentialBacksOff(t *testing.T) {
 	before := hits.Load()
 	if err := get(); err != nil || hits.Load() != before+1 {
 		t.Fatalf("after success the client should send normally: err=%v hits=%d->%d", err, before, hits.Load())
+	}
+}
+
+// The 2026-11-04 shape: the helper worked at start, then its path vanished (a
+// plugin update removed the version directory), and the server began refusing
+// the token graphwatch had cached. The stale token must not be resent: after
+// the failed refresh nothing reaches the server until the helper works again.
+func TestVanishedHelperDoesNotResendStaleToken(t *testing.T) {
+	var hits atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		if r.Header.Get("Authorization") == "Bearer tok-1" && hits.Load() == 1 {
+			w.Write([]byte(`{"data":{}}`))
+			return
+		}
+		w.WriteHeader(http.StatusUnauthorized)
+		w.Write([]byte(`{"error":"unauthenticated"}`))
+	}))
+	defer srv.Close()
+
+	dir := t.TempDir()
+	script := dir + "/helper.sh"
+	if err := os.WriteFile(script, []byte("#!/bin/sh\nprintf '{\"Authorization\":\"Bearer tok-1\"}'\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	c := newClient(srv.URL, &helper{cmd: "sh " + script})
+	now := time.Unix(0, 0)
+	c.now = func() time.Time { return now }
+	ctx := context.Background()
+	get := func() error { return c.do(ctx, http.MethodGet, "/graphs/g/nodes", nil, nil) }
+
+	if err := get(); err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	os.Remove(script) // the plugin update
+
+	// Token now refused; the refresh fails locally, so one hit, not two.
+	if err := get(); err == nil {
+		t.Fatal("want an error once the token is refused")
+	}
+	if n := hits.Load(); n != 2 {
+		t.Fatalf("want 2 hits (start + the refused one), got %d", n)
+	}
+	// Every later tick, held or probing, must not resend tok-1.
+	for i := 0; i < 50; i++ {
+		now = now.Add(10 * time.Second)
+		_ = get()
+	}
+	if n := hits.Load(); n != 2 {
+		t.Fatalf("stale token resent: %d hits", n)
 	}
 }
