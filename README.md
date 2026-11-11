@@ -63,7 +63,9 @@ gh attestation verify graphwatch-darwin-arm64 --repo instruxi-io/graphwatch
   the full order is under [Auth](#auth). A key or sign-in with only
   `enforcer:read` is enough to watch and list.
 - **Writes.** Every command is read-only except `decide`, `resolve`, `attend`
-  (only when you type an answer) and `--demo`. The service still checks each
+  (only when you type an answer), the watch view (only when you press `a`,
+  pick an answer and confirm it with `y`; `--read-only` turns that off) and
+  `--demo`. The service still checks each
   write against your role.
 - **Supply chain.** One static binary with no dependencies outside the Go
   standard library, built by GitHub Actions with provenance attestations,
@@ -120,6 +122,8 @@ cells are written each frame.
 | `--fps` | 15 | frames per second (only changed cells are sent) |
 | `--motion` | events | `events`: motion follows graph events and a quiet graph stops drawing; `continuous`: running nodes pulse |
 | `--layout` | layers | `layers` or `mycelium` |
+| `--read-only` | false | write nothing: the watch view drops its answer key (`a`) and has no writer; `n` still lists what needs you |
+| `--no-bell` | false | do not ring the terminal bell (`\a`) when a new item needs you |
 | `--no-overlays` | false | plain header: drop the epoch, work_state counts, review holds, recruiting demand and stream cursor |
 | `--base` | `$GRAPH_BASE_URL` or `https://api.instruxi.dev` | API origin |
 | `--api-key-file` | | read the API key from this file |
@@ -316,6 +320,32 @@ shows the next node, and an event for that node refetches it.
 
 The header shows the epoch, work_state counts, review holds, recruiting demand
 and the stream cursor. `--no-overlays` drops it back to a plain header.
+
+## Watch view: what needs you
+
+The top line carries a `needs you: N` badge, read from the same inbox as
+`graphwatch inbox` and `attend` (open review items and ready gates) and re-read
+on every stream event and on the poll. Each item that is new to the session
+rings the terminal bell once; a refresh that finds the same items rings
+nothing. `--no-bell` silences it.
+
+| key | action |
+|---|---|
+| `n` | open or close the needs-you panel |
+| `up` / `k`, `down` / `j` | in the panel: move the cursor |
+| `enter` | in the panel: move the graph selection to the item's node |
+| `a` | answer the item under the panel cursor, or the item on the selected node |
+| `1`-`9`, arrows, `enter` | choose a gate's decision (its `options`, else approve/reject) or a review item's action (the ones `attend` shows) |
+| text, `backspace`, `enter` | the note (optional; required for `override`), or the merge target / reply text |
+| `y` | on the confirm screen: send it. Any other key cancels and writes nothing |
+| `esc` | cancel the answer, or close the panel |
+
+The confirm screen shows the graph, the gate or item, the decision or action
+and the note exactly as they will be sent. `y` sends through the same calls as
+`attend` (`decide` and `resolve`), prints the service's answer (or refusal) on
+the status line and re-reads. `--read-only` removes `a` and the writer, so the
+watch view issues only GETs and the stream. Ctrl-C leaves from any step with
+the terminal restored.
 
 ## Auth
 

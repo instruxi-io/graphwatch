@@ -73,6 +73,7 @@ type view struct {
 	doneSeq  int
 	insp     *inspector // the node inspector; nil draws nothing
 	ov       *overlays  // plan-level header; nil keeps the plain header
+	ask      *asker     // needs-you badge, panel and answer flow; nil draws nothing
 }
 
 func newView() *view {
@@ -542,6 +543,16 @@ func (v *view) frame(w, h int, dt float64) string {
 	}
 	right := fmt.Sprintf("%s · seq %d · %d events", v.link, v.seq, v.events)
 	c.put(w-len([]rune(right))-2, 0, right, linkCol, false)
+	if v.ask != nil {
+		if items, ok := v.ask.needs.snapshot(); ok {
+			badge := fmt.Sprintf("needs you: %d", len(items))
+			col := rgb{120, 126, 146}
+			if len(items) > 0 {
+				col = rgb{250, 190, 60}
+			}
+			c.put(w-len([]rune(right))-len([]rune(badge))-5, 0, badge, col, len(items) > 0)
+		}
+	}
 	x := 1
 	plain := v.ov == nil
 	if !plain {
@@ -583,6 +594,7 @@ func (v *view) frame(w, h int, dt float64) string {
 	}
 
 	v.drawInspector(c, w, h, ids)
+	v.drawAsk(c, w, h)
 
 	var b strings.Builder
 	c.render(&b)

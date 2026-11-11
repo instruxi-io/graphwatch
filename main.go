@@ -63,6 +63,8 @@ func defineWatchFlags(fs *flag.FlagSet) *watchFlags {
 	o.fps = fs.Int("fps", 15, "frames per second (only changed cells are sent)")
 	o.motion = fs.String("motion", "events", "events: motion follows graph events and a quiet graph stops drawing; continuous: running nodes pulse and stream particles every frame")
 	o.layout = fs.String("layout", "layers", "layers: top-to-bottom layers; mycelium: a radial growth view with roots at the centre")
+	fs.BoolVar(&watchReadOnly, "read-only", false, "write nothing: hide the answer keys (a) so the watch view only reads; the needs-you panel (n) still lists")
+	fs.BoolVar(&watchNoBell, "no-bell", false, "do not ring the terminal bell when a new item needs you")
 	fs.BoolVar(&noOverlays, "no-overlays", false, "plain header: no epoch, work_state counts, review holds, recruiting or stream cursor")
 	// The table commands' global flags are accepted so a script can pass one set
 	// of flags to every form; the watch view says what it does with each.
@@ -79,6 +81,8 @@ func watchMain() {
 	flag.Usage = func() {
 		fmt.Fprintln(os.Stderr, "usage: graphwatch --graph <id> | --demo [flags]   (watch; the default command)")
 		fmt.Fprintln(os.Stderr, "       graphwatch <command> [flags]               (graphwatch help lists the commands)")
+		fmt.Fprintln(os.Stderr, "\nkeys: arrows/hjkl select a node, enter inspect, n needs-you panel (enter goes to the node),")
+		fmt.Fprintln(os.Stderr, "      a answer the selected item or node: choose, note, then a y/N confirm; q/esc quit")
 		fmt.Fprintln(os.Stderr, "\nflags:")
 		flag.PrintDefaults()
 	}
@@ -209,11 +213,21 @@ func watchLoop(ctx context.Context, cancel context.CancelFunc, c *client, g apiG
 		v.ov = ov
 		ovPoke = startOverlays(ctx, c, *graphID, ov, pace.subscribe())
 	}
+	// What needs you: the badge, the panel, the bell and the answer flow.
+	needs := &needsYou{}
+	var ring func()
+	if !watchNoBell {
+		ring = bellWriter(os.Stdout)
+	}
+	needsPoke := startNeeds(ctx, c, *graphID, needs, pace.subscribe(), ring)
+	v.insp = newInspector()
+	v.ask = newWatchAsker(ctx, c, *graphID, v, needs, func() { poke(); ovPoke(); needsPoke() })
 	go c.stream(ctx, *graphID, func(ev sseEvent) {
 		pace.frame()
 		v.event(ev)
 		if ev.Event != ":" {
 			poke()
+			needsPoke()
 			if ov != nil {
 				ov.stream(ev)
 				ovPoke()
@@ -228,7 +242,6 @@ func watchLoop(ctx context.Context, cancel context.CancelFunc, c *client, g apiG
 	})
 
 	// The inspector reads its own keys when no picker feeds them.
-	v.insp = newInspector()
 	startInspector(ctx, c, *graphID, v, pace.subscribe())
 	go pace.run(ctx)
 	picker := keys != nil
@@ -268,6 +281,9 @@ loop:
 		case <-ctx.Done():
 			break loop
 		case k := <-keys:
+			if v.ask.key(k, v.selectedKey()) {
+				continue
+			}
 			if k != "q" && k != "ctrl-c" && v.insp.key(k) {
 				continue
 			}

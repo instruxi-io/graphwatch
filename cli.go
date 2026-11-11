@@ -231,6 +231,8 @@ func runHelp(args []string, stdout, stderr io.Writer) int {
 	}
 	fmt.Fprintln(stdout, "usage: graphwatch <command> [flags]")
 	fmt.Fprintln(stdout, "       graphwatch --graph <id> | --demo   (watch; the default command)")
+	fmt.Fprintln(stdout, "       watch keys: arrows/hjkl select, enter inspect, n needs-you panel, a answer (y/N confirm), q quit;")
+	fmt.Fprintln(stdout, "       --read-only writes nothing and hides a, --no-bell silences the bell for new items")
 	fmt.Fprintln(stdout, "\ncommands:")
 	for _, c := range sortedCommands() {
 		fmt.Fprintf(stdout, "  %-12s %s\n", c.name, c.summary)

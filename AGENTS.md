@@ -48,8 +48,11 @@ and say so in the commit.
    with it in exactly the cases that matter (reclaims, verifying, held).
 3. **Every event means refetch.** The stream is a clock, not a data source. Its
    frames are thin; the viewers invalidate and re-read `/nodes` and `/edges`.
-4. **Watch mode writes nothing.** The demo driver is the only code that calls a
-   write, and only Demo mode calls into it. Keep it that way, and keep
+4. **Watch mode writes only when a person answers: an explicit keystroke and a
+   y/N confirm, through the same calls as attend. `--read-only` makes it write
+   nothing.** (graphwatch's watch view: `a`, then `y`, through `sendAnswer`.)
+   graph-live's Watch mode writes nothing: the demo driver is the only code
+   there that calls a write, and only Demo mode calls into it. Keep
    `GRAPH_LIVE_LOG=1` useful: it prints method and path per proxied request so a
    reviewer can confirm Watch mode issues only GETs and the stream.
 5. **Nothing is archived automatically.** A demo graph stays until a person
@@ -64,9 +67,10 @@ and say so in the commit.
 8. **Never commit a key, a token or a transcript.** `.npmrc` reads `GITHUB_TOKEN`
    from the environment at install time and is committed without a value.
 9. **Navigation commands are read-only.** Every `graphwatch` command other than
-   `--demo`, `decide`, `resolve` and `attend` issues GET only (`decide` and
-   `resolve` record an answer with one POST, and `attend` posts the same two
-   when you type an answer; none writes unless you run it that way); each lives in `cmd_<name>.go` and
+   `--demo`, `decide`, `resolve`, `attend` and the watch view issues GET only
+   (`decide` and `resolve` record an answer with one POST, and `attend` and
+   the watch view post the same two when you answer; none writes unless you
+   run it that way); each lives in `cmd_<name>.go` and
    registers itself from `init()`.
 
 ## Credentials
