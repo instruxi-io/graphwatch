@@ -84,6 +84,9 @@ type view struct {
 	lastFocus int
 	lastRows  int
 	lastPage  int
+	lastGap   int
+	cam       camera // pan and zoom; the zero value is the automatic layout
+	clipped   bool   // this frame's layout overflows its band
 }
 
 func newView() *view {
@@ -382,21 +385,36 @@ func (v *view) frame(w, h int, dt float64) string {
 		// A new selection scrolls to its layer, so the arrow keys (and a
 		// mouse wheel, which terminals send as arrows on this screen) reach
 		// nodes below the bottom edge.
-		if sel := v.selected(); sel != "" && sel != v.lastSel {
+		sel := v.selected()
+		moved := sel != "" && sel != v.lastSel
+		if moved {
 			for d, row := range rows {
 				if slices.Contains(row, sel) {
 					v.pin = d
 				}
 			}
-			v.lastSel = sel
+			v.lastSel, v.cam.panY = sel, 0
 		}
 		if v.pin >= 0 {
 			v.pin = min(v.pin, max(len(rows)-1, 0))
 			focus = v.pin
 		}
-		pl = place(rows, w, 4, h-6, focus)
-		v.lastFocus, v.lastRows = focus, len(rows)
+		pl = placeCam(rows, w, 4, h-6, focus, v.cam)
+		// Zoomed in past the screen's width, a selection off the side pans
+		// the view to it too.
+		if x, ok := pl.x[sel]; moved && ok && (x < 3 || x > float64(w-3)) {
+			v.cam.panX += int(x) - w/2
+			pl = placeCam(rows, w, 4, h-6, focus, v.cam)
+		}
+		v.lastFocus, v.lastRows, v.lastGap = focus, len(rows), pl.rowGap
 		v.lastPage = max(1, (h-10)/max(pl.rowGap, 1)-1)
+		v.clipped = false
+		for id, y := range pl.y {
+			if y < 4 || y > float64(h-6) || pl.x[id] < 0 || pl.x[id] > float64(w) {
+				v.clipped = true
+				break
+			}
+		}
 		for id, x := range pl.x {
 			v.prevX[id] = x
 		}
@@ -469,7 +487,11 @@ func (v *view) frame(w, h int, dt float64) string {
 		for _, p := range g.prereqs {
 			x0, y0 := px(p)
 			x1, y1 := px(id)
-			y0, y1 = y0+6, y1-3 // below the label, into the top of the dot
+			if pl.rowGap >= 3 {
+				y0, y1 = y0+6, y1-3 // below the label, into the top of the dot
+			} else {
+				y0, y1 = y0+2, y1-2 // zoomed out: no label row to clear
+			}
 			col, pri, stride := v.edgeLook(v.nodes[p], g)
 			n := int(math.Hypot(x1-x0, y1-y0)*1.4) + 2
 			for i := 0; i <= n; i++ {
@@ -546,7 +568,7 @@ func (v *view) frame(w, h int, dt float64) string {
 		cx, cy := int(vn.x+0.5), int(vn.y+0.5)
 		c.put(cx, cy, glyph, col, bold)
 		labelCol := rgb{120, 126, 146}.mix(col, 0.35+0.5*vn.heat)
-		if !v.mycelium || pl.slot[id] >= 4 { // a cramped mycelium node keeps only its glyph
+		if (!v.mycelium || pl.slot[id] >= 4) && (v.mycelium || pl.rowGap >= 2) { // too cramped: the glyph alone
 			c.putCentered(cx, cy+1, g.key, min(pl.slot[id], 18), labelCol, vn.heat > 0.6)
 		}
 		state := g.status
@@ -558,6 +580,11 @@ func (v *view) frame(w, h int, dt float64) string {
 			}
 		}
 		counts[state]++
+	}
+
+	if v.clipped {
+		c.clearRows(0, 3)
+		c.clearRows(h-4, h)
 	}
 
 	// Chrome: title, link state and counts on top; the event ticker below.
@@ -738,9 +765,9 @@ func (v *view) selected() string {
 	return v.insp.sel
 }
 
-// scrollKey moves the layered view for page keys and reports whether k was
-// one. The view stays where it is put until the selection moves or `f`
-// returns it to following the busiest layer.
+// scrollKey moves the layered view for page, pan and zoom keys and reports
+// whether k was one. The view stays where it is put until the selection moves
+// or `f` returns it to following the busiest layer.
 func (v *view) scrollKey(k string) bool {
 	v.mu.Lock()
 	defer v.mu.Unlock()
@@ -748,17 +775,49 @@ func (v *view) scrollKey(k string) bool {
 		return false // the radial view always fits the screen
 	}
 	last := max(v.lastRows-1, 0)
+	gap := max(v.lastGap, 1)
+	if v.cam.gap > 0 && !v.cam.fit {
+		gap = v.cam.gap // keys between frames each count
+	}
+	hz := v.cam.hz
+	if hz <= 0 {
+		hz = 1
+	}
 	switch k {
 	case "pgdown", " ":
-		v.pin = min(v.lastFocus+v.lastPage, last)
+		v.pin, v.cam.panY = min(v.lastFocus+v.lastPage, last), 0
 	case "pgup":
-		v.pin = max(v.lastFocus-v.lastPage, 0)
+		v.pin, v.cam.panY = max(v.lastFocus-v.lastPage, 0), 0
 	case "end", "G":
-		v.pin = last
+		v.pin, v.cam.panY = last, 0
 	case "home", "g":
-		v.pin = 0
+		v.pin, v.cam.panY = 0, 0
 	case "f":
-		v.pin = -1
+		v.pin, v.cam = -1, camera{}
+	case "ctrl-up":
+		v.cam.panY -= 3
+	case "ctrl-down":
+		v.cam.panY += 3
+	case "ctrl-left":
+		v.cam.panX -= 8
+	case "ctrl-right":
+		v.cam.panX += 8
+	case "shift-up", "+", "=":
+		v.cam.fit, v.cam.gap, v.cam.hz = false, min(gap+1, 12), min(hz*1.25, 4)
+	case "shift-down", "-", "_":
+		if gap <= 1 {
+			v.cam.fit = true // below one row a layer: squeeze the rest in
+		} else {
+			v.cam.gap = gap - 1
+		}
+		v.cam.hz = max(hz/1.25, 0.3)
+	case "shift-right":
+		v.cam.hz = min(hz*1.25, 4)
+	case "shift-left":
+		v.cam.hz = max(hz/1.25, 0.3)
+	case "0":
+		// Fit: every layer on screen at once, labels dropped if they must be.
+		v.pin, v.cam = 0, camera{fit: true}
 	default:
 		return false
 	}

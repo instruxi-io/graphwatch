@@ -318,12 +318,25 @@ node, `enter` opens the inspector (the node's latest run, evidence, verdicts,
 tier and route) and `esc` closes it. While it is open, moving the selection
 shows the next node, and an event for that node refetches it.
 
-When the graph is deeper than the terminal, the view follows the busiest layer.
-To look elsewhere, `PgDn`/`space` and `PgUp` page through the layers, `G`/`End`
-jumps to the bottom, `g`/`Home` to the top, and `f` goes back to following the
-work. Moving the selection off the edge scrolls with it, so the mouse wheel
-works too (terminals send it as arrow keys on the alternate screen). The
-`--mycelium` view always fits the screen and ignores these keys.
+When the graph is bigger than the terminal, the view follows the busiest layer
+and the rest is clipped at the header and the event ticker. To look around:
+
+| key | does |
+|---|---|
+| `0` | fit the whole graph on screen (labels drop out when rows get tight) |
+| `Ctrl`+arrows | pan |
+| `Shift`+`↑`/`↓` (or `+`/`-`) | zoom in / out |
+| `Shift`+`←`/`→` | narrower / wider layers |
+| `PgDn`/`space`, `PgUp` | page through the layers |
+| `G`/`End`, `g`/`Home` | bottom / top |
+| `f` | back to following the work at the default zoom |
+| `esc`, `b`, `backspace` | back to the list of graphs (also from `--graph <id>`) |
+| `q` | quit (back to the list when the view was opened from it) |
+
+Moving the selection off the edge scrolls (and, zoomed in, pans) with it, so the
+mouse wheel works too: terminals send it as arrow keys on the alternate screen.
+`Esc` closes an open inspector first. The `--mycelium` view always fits the
+screen and ignores the scroll, pan and zoom keys.
 
 The header shows the epoch, work_state counts, review holds, recruiting demand
 and the stream cursor. `--no-overlays` drops it back to a plain header.
