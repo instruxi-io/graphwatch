@@ -238,7 +238,33 @@ func readKeys(ctx context.Context, in io.Reader) <-chan string {
 }
 
 // tildeKeys names the ESC [ n ~ sequences terminals send for the page keys.
-var tildeKeys = map[byte]string{'1': "home", '7': "home", '4': "end", '8': "end", '5': "pgup", '6': "pgdown"}
+var tildeKeys = map[string]string{"1": "home", "7": "home", "4": "end", "8": "end", "5": "pgup", "6": "pgdown"}
+
+// csiKey names one CSI sequence by its parameters and final byte, or "" for one
+// graphwatch has no use for. A ";2" modifier is shift, ";5" ctrl.
+func csiKey(params string, final byte) string {
+	if final == '~' {
+		return tildeKeys[params]
+	}
+	names := map[byte]string{'A': "up", 'B': "down", 'C': "right", 'D': "left", 'H': "home", 'F': "end"}
+	k := names[final]
+	if k == "" {
+		return ""
+	}
+	mod := ""
+	if i := strings.LastIndexByte(params, ';'); i >= 0 {
+		mod = params[i+1:]
+	}
+	switch mod {
+	case "", "1":
+		return k
+	case "2":
+		return "shift-" + k
+	case "5":
+		return "ctrl-" + k
+	}
+	return "" // alt and other chords: swallowed, not misread as a plain arrow
+}
 
 func parseKeys(b []byte) []string {
 	var out []string
@@ -246,30 +272,21 @@ func parseKeys(b []byte) []string {
 		switch c := b[i]; {
 		case c == 0x1b:
 			if i+2 < len(b) && (b[i+1] == '[' || b[i+1] == 'O') {
-				switch b[i+2] {
-				case 'A':
-					out = append(out, "up")
-				case 'B':
-					out = append(out, "down")
-				case 'C':
-					out = append(out, "right")
-				case 'D':
-					out = append(out, "left")
-				case 'H':
-					out = append(out, "home")
-				case 'F':
-					out = append(out, "end")
-				case '1', '4', '5', '6', '7', '8':
-					// ESC [ n ~ : page and home/end keys. Swallow the whole
-					// sequence, so its digits and ~ never arrive as keys.
-					if i+3 < len(b) && b[i+3] == '~' {
-						if k := tildeKeys[b[i+2]]; k != "" {
-							out = append(out, k)
-						}
-						i++
-					}
+				// A CSI/SS3 sequence: parameters, then one final byte. Read it
+				// whole, so modified keys (ESC [ 1 ; 5 A) never leak their
+				// digits, ';' or final letter as keys of their own.
+				j := i + 2
+				for j < len(b) && (b[j] == ';' || (b[j] >= '0' && b[j] <= '9')) {
+					j++
 				}
-				i += 2
+				if j >= len(b) {
+					i = len(b) - 1
+					break
+				}
+				if k := csiKey(string(b[i+2:j]), b[j]); k != "" {
+					out = append(out, k)
+				}
+				i = j
 			} else {
 				out = append(out, "esc")
 			}
@@ -312,8 +329,9 @@ const (
 	altOff = "\x1b[0m\x1b[?25h\x1b[?1049l"
 )
 
-// runPicker is the interactive loop. It returns the exit code.
-func runPicker(keyFile, base string, fps int, continuous bool) int {
+// runPicker is the interactive loop. It returns the exit code. keys is the
+// reader a watch view opened with --graph was using, or nil to start one.
+func runPicker(keyFile, base string, fps int, continuous bool, keys <-chan string) int {
 	cred, _, baseURL, err := resolveFromProcess(keyFile, base)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, strings.TrimPrefix(err.Error(), "graphwatch: "))
@@ -333,7 +351,9 @@ func runPicker(keyFile, base string, fps int, continuous bool) int {
 		}
 		return exitRuntime
 	}
-	keys := readKeys(ctx, os.Stdin)
+	if keys == nil {
+		keys = readKeys(ctx, os.Stdin)
+	}
 	os.Stdout.WriteString(altOn)
 	defer os.Stdout.WriteString(altOff)
 
@@ -412,7 +432,7 @@ func launchWatch(ctx context.Context, c *client, row pickerRow, mycelium bool, f
 		v.edgeT = g.DependencyEdgeType
 	}
 	// stay: a finished graph returns to the picker on q, not on its own.
-	watchLoop(wctx, cancel, c, g, v, nil, fps, true, keys)
+	watchLoop(wctx, cancel, c, g, v, nil, fps, true, keys, true)
 }
 
 // launchTail runs the tail command until q, Esc or Ctrl-C.

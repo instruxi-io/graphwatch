@@ -128,7 +128,7 @@ func watchMain() {
 			runHelp(nil, os.Stderr, os.Stderr)
 			os.Exit(exitUsage)
 		}
-		os.Exit(runPicker(*keyFile, *base, *fps, *motion == "continuous"))
+		os.Exit(runPicker(*keyFile, *base, *fps, *motion == "continuous", nil))
 	}
 
 	cred, source, baseURL, err := resolveFromProcess(*keyFile, *base)
@@ -166,14 +166,29 @@ func watchMain() {
 		os.Exit(1)
 	}
 	c.slowNote = nil
-	watchLoop(ctx, cancel, c, g, v, d, *fps, *stay, nil)
+	// The keys are read here, not in the loop, so going back to the list hands
+	// the picker the same reader: a second reader on stdin would steal keys.
+	var keys <-chan string
+	undo := func() {}
+	if isTerminal(os.Stdin) {
+		if u, err := sttyRaw(); err == nil {
+			undo, keys = u, readKeys(context.Background(), os.Stdin)
+		}
+	}
+	back := watchLoop(ctx, cancel, c, g, v, d, *fps, *stay, keys, false)
+	if back && keys != nil {
+		code := runPicker(*keyFile, *base, *fps, *motion == "continuous", keys)
+		undo()
+		os.Exit(code)
+	}
+	undo()
 	fmt.Printf("graphwatch: %s (%s)\n", g.Slug, *graphID)
 }
 
 // watchLoop is the frame loop: read, listen, diff, draw. keys is nil unless the
 // picker started the view; then q or Esc ends the loop and it reports back=true
 // so the caller returns to the picker instead of exiting.
-func watchLoop(ctx context.Context, cancel context.CancelFunc, c *client, g apiGraph, v *view, d *demo, fps int, stay bool, keys <-chan string) (back bool) {
+func watchLoop(ctx context.Context, cancel context.CancelFunc, c *client, g apiGraph, v *view, d *demo, fps int, stay bool, keys <-chan string, picker bool) (back bool) {
 	graphID := &g.ID
 	stayP, fpsP := &stay, &fps
 	v.title = g.Slug
@@ -244,7 +259,6 @@ func watchLoop(ctx context.Context, cancel context.CancelFunc, c *client, g apiG
 	// The inspector reads its own keys when no picker feeds them.
 	startInspector(ctx, c, *graphID, v, pace.subscribe())
 	go pace.run(ctx)
-	picker := keys != nil
 	if keys == nil {
 		if undo, err := sttyRaw(); err == nil {
 			defer undo()
@@ -290,8 +304,8 @@ loop:
 			if v.scrollKey(k) {
 				continue
 			}
-			if k == "q" || k == "esc" || k == "ctrl-c" {
-				back = picker && k != "ctrl-c"
+			if leave, b := watchExit(k, picker); leave {
+				back = b
 				break loop
 			}
 		case <-sizeT.C:
@@ -314,6 +328,22 @@ loop:
 	wg.Wait()
 	restore()
 	return back
+}
+
+// watchExit says whether k leaves the watch view and, if so, whether it goes
+// back to the list of graphs. Esc, b and backspace go back even when the view
+// was opened with --graph; q goes back only from the picker and otherwise
+// quits; Ctrl-C always quits.
+func watchExit(k string, picker bool) (leave, back bool) {
+	switch k {
+	case "esc", "b", "backspace":
+		return true, true
+	case "q":
+		return true, picker
+	case "ctrl-c":
+		return true, false
+	}
+	return false, false
 }
 
 // termSize asks stty, so the command needs nothing outside the standard

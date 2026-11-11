@@ -128,7 +128,20 @@ type placement struct {
 	slot   map[string]int // label width available to each node
 }
 
+// camera is the user's pan and zoom over the layered view. The zero value is
+// the automatic layout: rows spaced to the screen, every layer as wide as fits.
+type camera struct {
+	gap        int     // row spacing in cells; 0 spaces rows to fit
+	fit        bool    // squeeze every layer into the band, rows sharing cells if they must
+	hz         float64 // width scale of each layer; 0 means 1
+	panX, panY int     // cells the view is moved right and down
+}
+
 func place(rows [][]string, w, top, bottom int, focus int) placement {
+	return placeCam(rows, w, top, bottom, focus, camera{})
+}
+
+func placeCam(rows [][]string, w, top, bottom int, focus int, cam camera) placement {
 	p := placement{x: map[string]float64{}, y: map[string]float64{}, slot: map[string]int{}}
 	avail := bottom - top
 	n := max(len(rows), 1)
@@ -136,20 +149,41 @@ func place(rows [][]string, w, top, bottom int, focus int) placement {
 	if n > 1 {
 		p.rowGap = min(6, max(3, avail/n))
 	}
+	if cam.gap > 0 {
+		p.rowGap = cam.gap
+	}
+	hz := cam.hz
+	if hz <= 0 {
+		hz = 1
+	}
 	offset := 0
-	if span := (n - 1) * p.rowGap; span > avail-1 {
+	span := (n - 1) * p.rowGap
+	if span > avail-1 {
 		offset = focus*p.rowGap - avail/3
 		offset = max(0, min(offset, span-(avail-2)))
+	}
+	if cam.panY != 0 {
+		// Panned: free to move, but never so far the graph leaves the band.
+		offset = max(-avail/2, min(offset+cam.panY, max(span-avail/2, 0)))
+	}
+	step := float64(p.rowGap)
+	if cam.fit && n > 1 {
+		step = min(6, float64(avail-1)/float64(n-1))
+		p.rowGap = max(1, int(step))
+		offset = 0
+		if cam.panY != 0 {
+			offset = max(-avail/2, min(cam.panY, avail/2))
+		}
 	}
 	for d, row := range rows {
 		// Capped and centred, so a narrow layer stays under its parents and
 		// the curves between layers stay steep rather than smeared flat.
 		k := len(row)
-		slotW := min(24, float64(w-4)/float64(max(k, 1)))
-		left := float64(w)/2 - slotW*float64(k)/2
+		slotW := min(24, float64(w-4)/float64(max(k, 1))) * hz
+		left := float64(w)/2 - slotW*float64(k)/2 - float64(cam.panX)
 		for i, id := range row {
 			p.x[id] = left + slotW*(float64(i)+0.5)
-			p.y[id] = float64(top + d*p.rowGap - offset)
+			p.y[id] = float64(top-offset) + step*float64(d)
 			p.slot[id] = int(slotW) - 1
 		}
 	}

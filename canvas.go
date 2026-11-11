@@ -59,6 +59,14 @@ func newCanvas(w, h int) *canvas {
 		text: make([]rune, n), tcol: make([]rgb, n), tbold: make([]bool, n)}
 }
 
+// clearRows blanks rows [y0, y1), dots and text, so a layout that overflows its
+// band never draws under the header or the ticker.
+func (c *canvas) clearRows(y0, y1 int) {
+	for i := max(y0, 0) * c.w; i < min(y1, c.h)*c.w; i++ {
+		c.dots[i], c.dpri[i], c.text[i] = 0, 0, 0
+	}
+}
+
 // dot sets the braille pixel (px, py); pixel space is 2w × 4h.
 func (c *canvas) dot(px, py int, col rgb, pri float64) {
 	if px < 0 || py < 0 || px >= c.w*2 || py >= c.h*4 {
