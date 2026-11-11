@@ -180,3 +180,26 @@ func (v *view) drawInspector(c *canvas, w, h int, ids []string) {
 		c.put(2, top+i, l, rgb{200, 206, 222}, i == 0)
 	}
 }
+
+// drawAsk paints the needs-you panel or the answer flow over the bottom rows,
+// above the inspector. With no asker, or the flow closed, it draws nothing.
+func (v *view) drawAsk(c *canvas, w, h int) {
+	if v.ask == nil {
+		return
+	}
+	lines := v.ask.lines(w - 4)
+	if len(lines) == 0 {
+		return
+	}
+	top := max(3, h-len(lines)-2)
+	for y := top - 1; y < h; y++ {
+		c.put(0, y, strings.Repeat(" ", w), rgb{}, false)
+	}
+	c.put(1, top-1, strings.Repeat("─", w-2), rgb{250, 190, 60}, false)
+	for i, l := range lines {
+		if top+i >= h {
+			break
+		}
+		c.put(2, top+i, l, rgb{220, 224, 236}, i == 0)
+	}
+}

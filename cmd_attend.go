@@ -195,28 +195,25 @@ func attendLine(ctx context.Context, env *cliEnv, graphID, line string, current 
 		fmt.Fprintf(env.errOut, "no item %d\n", n)
 		return true
 	}
-	// Answers go through runResolve and runDecide, the code behind the
-	// resolve and decide commands, so refusals read the same everywhere.
+	// Answers go through sendAnswer, which the watch view's answer flow calls
+	// too, so refusals read the same everywhere.
 	switch {
 	case item.Type == "review" && f[1] != "decide":
 		// Any word goes to the service, which answers invalid_action for a
 		// wrong one. merge takes the target id, reply takes the text.
 		rest := f[2:]
-		args := []string{graphID, item.ID, f[1]}
-		cenv := noteEnv(env, strings.Join(rest, " "))
+		a := answer{Graph: graphID, Item: *item, Action: f[1], Note: strings.Join(rest, " ")}
 		switch f[1] {
 		case "merge":
 			if len(rest) == 0 {
 				fmt.Fprintln(env.errOut, "merge needs the observation id: "+strconv.Itoa(n)+" merge <id>")
 				return true
 			}
-			cenv = noteEnv(env, strings.Join(rest[1:], " "))
-			args = append(args, "--into", rest[0])
+			a.Value, a.Note = rest[0], strings.Join(rest[1:], " ")
 		case "reply":
-			cenv = noteEnv(env, "")
-			args = append(args, "--text", strings.Join(rest, " "))
+			a.Value, a.Note = strings.Join(rest, " "), ""
 		}
-		runResolve(ctx, cenv, args)
+		sendAnswer(ctx, env, a)
 	case item.Type == "gate" && f[1] == "decide":
 		if len(f) < 3 {
 			fmt.Fprintln(env.errOut, "decide needs a decision")
@@ -226,13 +223,41 @@ func attendLine(ctx context.Context, env *cliEnv, graphID, line string, current 
 			fmt.Fprintf(env.errOut, "%q is not one of the options: %s\n", f[2], clean(strings.Join(item.Options, " | ")))
 			return true
 		}
-		runDecide(ctx, noteEnv(env, strings.Join(f[3:], " ")), []string{graphID, item.ID, f[2]})
+		sendAnswer(ctx, env, answer{Graph: graphID, Item: *item, Action: f[2], Note: strings.Join(f[3:], " ")})
 	case item.Type == "review":
 		fmt.Fprintf(env.errOut, "item %d is a review item: %d <action> [note...] (%s)\n", n, n, strings.Join(actionsForKind(item.Item), "|"))
 	default:
 		fmt.Fprintf(env.errOut, "item %d is a gate: %d decide <decision> [note...]\n", n, n)
 	}
 	return true
+}
+
+// answer is one person's answer to one needs-you item. For a gate Action is
+// the decision; for a review item it is the action, and Value carries what
+// merge (the target observation) and reply (the text) take.
+type answer struct {
+	Graph  string
+	Item   inboxEntry
+	Action string
+	Value  string
+	Note   string
+}
+
+// sendAnswer records an answer through runDecide or runResolve, the code
+// behind the decide and resolve commands. attend and the watch view both call
+// it; it is the only way either writes.
+func sendAnswer(ctx context.Context, env *cliEnv, a answer) int {
+	if a.Item.Type == "gate" {
+		return runDecide(ctx, noteEnv(env, a.Note), []string{a.Graph, a.Item.ID, a.Action})
+	}
+	args := []string{a.Graph, a.Item.ID, a.Action}
+	switch a.Action {
+	case "merge":
+		args = append(args, "--into", a.Value)
+	case "reply":
+		args = append(args, "--text", a.Value)
+	}
+	return runResolve(ctx, noteEnv(env, a.Note), args)
 }
 
 // noteEnv copies env with a flag set that carries the note, which is where
