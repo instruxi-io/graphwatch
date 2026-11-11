@@ -237,12 +237,15 @@ func readKeys(ctx context.Context, in io.Reader) <-chan string {
 	return ch
 }
 
+// tildeKeys names the ESC [ n ~ sequences terminals send for the page keys.
+var tildeKeys = map[byte]string{'1': "home", '7': "home", '4': "end", '8': "end", '5': "pgup", '6': "pgdown"}
+
 func parseKeys(b []byte) []string {
 	var out []string
 	for i := 0; i < len(b); i++ {
 		switch c := b[i]; {
 		case c == 0x1b:
-			if i+2 < len(b) && b[i+1] == '[' {
+			if i+2 < len(b) && (b[i+1] == '[' || b[i+1] == 'O') {
 				switch b[i+2] {
 				case 'A':
 					out = append(out, "up")
@@ -252,6 +255,19 @@ func parseKeys(b []byte) []string {
 					out = append(out, "right")
 				case 'D':
 					out = append(out, "left")
+				case 'H':
+					out = append(out, "home")
+				case 'F':
+					out = append(out, "end")
+				case '1', '4', '5', '6', '7', '8':
+					// ESC [ n ~ : page and home/end keys. Swallow the whole
+					// sequence, so its digits and ~ never arrive as keys.
+					if i+3 < len(b) && b[i+3] == '~' {
+						if k := tildeKeys[b[i+2]]; k != "" {
+							out = append(out, k)
+						}
+						i++
+					}
 				}
 				i += 2
 			} else {

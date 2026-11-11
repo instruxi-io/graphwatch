@@ -287,6 +287,9 @@ loop:
 			if k != "q" && k != "ctrl-c" && v.insp.key(k) {
 				continue
 			}
+			if v.scrollKey(k) {
+				continue
+			}
 			if k == "q" || k == "esc" || k == "ctrl-c" {
 				back = picker && k != "ctrl-c"
 				break loop

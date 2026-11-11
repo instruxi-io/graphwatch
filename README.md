@@ -318,6 +318,13 @@ node, `enter` opens the inspector (the node's latest run, evidence, verdicts,
 tier and route) and `esc` closes it. While it is open, moving the selection
 shows the next node, and an event for that node refetches it.
 
+When the graph is deeper than the terminal, the view follows the busiest layer.
+To look elsewhere, `PgDn`/`space` and `PgUp` page through the layers, `G`/`End`
+jumps to the bottom, `g`/`Home` to the top, and `f` goes back to following the
+work. Moving the selection off the edge scrolls with it, so the mouse wheel
+works too (terminals send it as arrow keys on the alternate screen). The
+`--mycelium` view always fits the screen and ignores these keys.
+
 The header shows the epoch, work_state counts, review holds, recruiting demand
 and the stream cursor. `--no-overlays` drops it back to a plain header.
 

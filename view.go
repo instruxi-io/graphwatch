@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"math/rand/v2"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -74,12 +75,21 @@ type view struct {
 	insp     *inspector // the node inspector; nil draws nothing
 	ov       *overlays  // plan-level header; nil keeps the plain header
 	ask      *asker     // needs-you badge, panel and answer flow; nil draws nothing
+	// Scrolling the layered view when the graph is deeper than the screen.
+	// pin is the layer held a third of the way down, or -1 to follow the
+	// busiest layer. lastFocus, lastRows and lastPage are what the previous
+	// frame drew, so a scroll key moves from what is on screen.
+	pin       int
+	lastSel   string
+	lastFocus int
+	lastRows  int
+	lastPage  int
 }
 
 func newView() *view {
 	return &view{nodes: map[string]*gnode{}, vis: map[string]*viewNode{}, byKey: map[string]string{},
 		prevX: map[string]float64{}, runNode: map[string]string{}, link: "connecting", edgeT: "requires",
-		rng: rand.New(rand.NewPCG(1, 2)), started: time.Now(), clock: time.Now}
+		rng: rand.New(rand.NewPCG(1, 2)), started: time.Now(), clock: time.Now, pin: -1}
 }
 
 func (v *view) setLink(s string) { v.mu.Lock(); v.link = s; v.mu.Unlock() }
@@ -369,7 +379,24 @@ func (v *view) frame(w, h int, dt float64) string {
 				break
 			}
 		}
+		// A new selection scrolls to its layer, so the arrow keys (and a
+		// mouse wheel, which terminals send as arrows on this screen) reach
+		// nodes below the bottom edge.
+		if sel := v.selected(); sel != "" && sel != v.lastSel {
+			for d, row := range rows {
+				if slices.Contains(row, sel) {
+					v.pin = d
+				}
+			}
+			v.lastSel = sel
+		}
+		if v.pin >= 0 {
+			v.pin = min(v.pin, max(len(rows)-1, 0))
+			focus = v.pin
+		}
 		pl = place(rows, w, 4, h-6, focus)
+		v.lastFocus, v.lastRows = focus, len(rows)
+		v.lastPage = max(1, (h-10)/max(pl.rowGap, 1)-1)
 		for id, x := range pl.x {
 			v.prevX[id] = x
 		}
@@ -699,4 +726,41 @@ func (v *view) drawGrowth(c *canvas, ids []string, now float64) {
 			c.dot(int(d.x), int(d.y), col, pri)
 		}
 	}
+}
+
+// selected is the inspector's selection, or "" without one.
+func (v *view) selected() string {
+	if v.insp == nil {
+		return ""
+	}
+	v.insp.mu.Lock()
+	defer v.insp.mu.Unlock()
+	return v.insp.sel
+}
+
+// scrollKey moves the layered view for page keys and reports whether k was
+// one. The view stays where it is put until the selection moves or `f`
+// returns it to following the busiest layer.
+func (v *view) scrollKey(k string) bool {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	if v.mycelium {
+		return false // the radial view always fits the screen
+	}
+	last := max(v.lastRows-1, 0)
+	switch k {
+	case "pgdown", " ":
+		v.pin = min(v.lastFocus+v.lastPage, last)
+	case "pgup":
+		v.pin = max(v.lastFocus-v.lastPage, 0)
+	case "end", "G":
+		v.pin = last
+	case "home", "g":
+		v.pin = 0
+	case "f":
+		v.pin = -1
+	default:
+		return false
+	}
+	return true
 }
