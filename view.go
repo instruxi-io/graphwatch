@@ -77,11 +77,23 @@ type view struct {
 	// gliding and the terminal never stopped repainting.
 	rows     [][]string
 	rowsTopo int
-	topoSig  string // nodes and dependency edges; topo moves only when it does
-	doneSeq  int
-	insp     *inspector // the node inspector; nil draws nothing
-	ov       *overlays  // plan-level header; nil keeps the plain header
-	ask      *asker     // needs-you badge, panel and answer flow; nil draws nothing
+	// Condensing (condense.go): shown is the graph the layered view draws,
+	// rebuilt when gen moves (apply, the group keys) or the setting does.
+	condenseAt  int
+	condenseOff bool
+	opened      map[string]bool // members of groups the user opened
+	cd          condensed
+	shown       map[string]*gnode
+	gen         int
+	built       int
+	builtAt     int
+	shownSig    string
+	shownTopo   int
+	topoSig     string // nodes and dependency edges; topo moves only when it does
+	doneSeq     int
+	insp        *inspector // the node inspector; nil draws nothing
+	ov          *overlays  // plan-level header; nil keeps the plain header
+	ask         *asker     // needs-you badge, panel and answer flow; nil draws nothing
 	// Scrolling the layered view when the graph is deeper than the screen.
 	// pin is the layer held a third of the way down, or -1 to follow the
 	// busiest layer. lastFocus, lastRows and lastPage are what the previous
@@ -98,7 +110,7 @@ type view struct {
 
 func newView() *view {
 	return &view{nodes: map[string]*gnode{}, vis: map[string]*viewNode{}, byKey: map[string]string{},
-		prevX: map[string]float64{}, runNode: map[string]string{}, link: "connecting", edgeT: "requires",
+		prevX: map[string]float64{}, opened: map[string]bool{}, runNode: map[string]string{}, link: "connecting", edgeT: "requires",
 		rng: rand.New(rand.NewPCG(1, 2)), started: time.Now(), clock: time.Now, pin: -1}
 }
 
@@ -156,10 +168,11 @@ func (v *view) apply(ns []apiNode, es []apiEdge) {
 		}
 	}
 	for id := range v.vis {
-		if _, ok := next[id]; !ok {
+		if _, ok := next[id]; !ok && !isGroupID(id) {
 			delete(v.vis, id)
 		}
 	}
+	v.gen++ // statuses or edges may have moved a node into or out of a group
 	// A plan that completed and then grew is not complete any more: the
 	// graph.completed event was true when it was sent, and new work undid it.
 	if !v.finale.IsZero() {
@@ -293,7 +306,7 @@ func (v *view) say(text string, col rgb) {
 
 func (v *view) ready(g *gnode) bool {
 	for _, p := range g.prereqs {
-		if s := v.nodes[p].status; s != "done" && s != "cancelled" {
+		if q := v.node(p); q != nil && q.status != "done" && q.status != "cancelled" {
 			return false
 		}
 	}
@@ -303,6 +316,9 @@ func (v *view) ready(g *gnode) bool {
 // look is a node's glyph and colour: the shading of the dot IS the state.
 func (v *view) look(g *gnode, vn *viewNode, now float64) (string, rgb, bool) {
 	h := vn.heat
+	if g.members > 0 { // a condensed group of finished work: enter opens it
+		return "◆", rgb{64, 196, 160}.mix(thermal(0.75+0.25*h), h*0.85), true
+	}
 	switch g.status {
 	case "done":
 		return "●", rgb{64, 196, 160}.mix(thermal(0.75+0.25*h), h*0.85), h > 0.5
@@ -362,28 +378,29 @@ func (v *view) frame(w, h int, dt float64) string {
 	wall := v.clock()
 	now := wall.Sub(v.started).Seconds()
 	c := newCanvas(w, h)
+	v.recondense(v.selected())
 
-	depth := layers(v.nodes)
+	depth := layers(v.shown)
 	var pl placement
 	if v.mycelium {
 		// The layout depends only on the graph and the screen size, so it is
 		// computed when either changes and is the same object every frame.
 		if key := [3]int{v.topo, w, h}; v.myc.x == nil || key != v.mycKey {
-			v.myc, v.mycKey = mycelium(v.nodes, depth, w, 4, h-6), key
+			v.myc, v.mycKey = mycelium(v.shown, depth, w, 4, h-6), key
 			pl = placement{x: v.myc.x, y: v.myc.y, slot: v.myc.slot}
-			v.grown = grow(v.nodes, depth, pl, w, 3, h-5)
+			v.grown = grow(v.shown, depth, pl, w, 3, h-5)
 		}
 		pl = placement{x: v.myc.x, y: v.myc.y, slot: v.myc.slot}
 	} else {
-		if v.rows == nil || v.rowsTopo != v.topo {
-			v.rows, v.rowsTopo = order(v.nodes, depth, v.prevX), v.topo
+		if v.rows == nil || v.rowsTopo != v.shownTopo {
+			v.rows, v.rowsTopo = order(v.shown, depth, v.prevX), v.shownTopo
 		}
 		rows := v.rows
 		focus := 0
 		for d, row := range rows {
 			busy := false
 			for _, id := range row {
-				if s := v.nodes[id].status; s == "running" || (s != "done" && s != "cancelled" && v.ready(v.nodes[id])) {
+				if s := v.shown[id].status; s == "running" || (s != "done" && s != "cancelled" && v.ready(v.shown[id])) {
 					busy = true
 				}
 			}
@@ -435,13 +452,13 @@ func (v *view) frame(w, h int, dt float64) string {
 	glide := 1 - math.Exp(-dt*5)
 	// Draw in a fixed order: overlapping labels and tied edge dots are won by
 	// whoever draws last, and map order changes every frame.
-	ids := make([]string, 0, len(v.nodes))
-	for id := range v.nodes {
+	ids := make([]string, 0, len(v.shown))
+	for id := range v.shown {
 		ids = append(ids, id)
 	}
 	sort.Strings(ids)
 	for _, id := range ids {
-		g := v.nodes[id]
+		g := v.shown[id]
 		vn := v.vis[id]
 		tx, ty := pl.x[id], pl.y[id]
 		if !vn.placed {
@@ -493,7 +510,7 @@ func (v *view) frame(w, h int, dt float64) string {
 		if v.mycelium {
 			break
 		}
-		g := v.nodes[id]
+		g := v.shown[id]
 		for _, p := range g.prereqs {
 			x0, y0 := px(p)
 			x1, y1 := px(id)
@@ -502,7 +519,7 @@ func (v *view) frame(w, h int, dt float64) string {
 			} else {
 				y0, y1 = y0+2, y1-2 // zoomed out: no label row to clear
 			}
-			col, pri, stride := v.edgeLook(v.nodes[p], g)
+			col, pri, stride := v.edgeLook(v.shown[p], g)
 			n := int(math.Hypot(x1-x0, y1-y0)*1.4) + 2
 			for i := 0; i <= n; i++ {
 				if i%stride != 0 {
@@ -518,16 +535,18 @@ func (v *view) frame(w, h int, dt float64) string {
 	live := v.parts[:0]
 	for _, pt := range v.parts {
 		pt.t += pt.speed * dt
-		if pt.t >= 1 || v.vis[pt.from] == nil || v.vis[pt.to] == nil {
+		// Members of a closed group are drawn as the group.
+		from, to := v.drawnAs(pt.from), v.drawnAs(pt.to)
+		if pt.t >= 1 || from == to || v.vis[from] == nil || v.vis[to] == nil {
 			if pt.t >= 1 {
-				if vn := v.vis[pt.to]; vn != nil {
+				if vn := v.vis[to]; vn != nil {
 					vn.heat = max(vn.heat, pt.heat*0.6)
 				}
 			}
 			continue
 		}
-		x0, y0 := px(pt.from)
-		x1, y1 := px(pt.to)
+		x0, y0 := px(from)
+		x1, y1 := px(to)
 		var path []int32
 		if v.mycelium {
 			path = v.grown.path[[2]string{pt.from, pt.to}]
@@ -572,7 +591,7 @@ func (v *view) frame(w, h int, dt float64) string {
 	}
 	counts := map[string]int{}
 	for _, id := range ids {
-		g := v.nodes[id]
+		g := v.shown[id]
 		vn := v.vis[id]
 		glyph, col, bold := v.look(g, vn, now)
 		cx, cy := int(vn.x+0.5), int(vn.y+0.5)
@@ -581,6 +600,9 @@ func (v *view) frame(w, h int, dt float64) string {
 		if (!v.mycelium || pl.slot[id] >= 4) && (v.mycelium || pl.rowGap >= 2) { // too cramped: the glyph alone
 			c.putCentered(cx, cy+1, g.key, min(pl.slot[id], 18), labelCol, vn.heat > 0.6)
 		}
+	}
+	// Counted over the real nodes: a condensed group is many done nodes.
+	for _, g := range v.nodes {
 		state := g.status
 		if state != "done" && state != "running" && state != "failed" && state != "cancelled" && state != "needs_review" {
 			if v.ready(g) {
