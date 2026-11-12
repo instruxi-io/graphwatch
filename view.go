@@ -89,11 +89,14 @@ type view struct {
 	builtAt     int
 	shownSig    string
 	shownTopo   int
-	topoSig     string // nodes and dependency edges; topo moves only when it does
-	doneSeq     int
-	insp        *inspector // the node inspector; nil draws nothing
-	ov          *overlays  // plan-level header; nil keeps the plain header
-	ask         *asker     // needs-you badge, panel and answer flow; nil draws nothing
+	// loaded is set by the first whole read; until then load is drawn.
+	loaded  bool
+	load    loadState
+	topoSig string // nodes and dependency edges; topo moves only when it does
+	doneSeq int
+	insp    *inspector // the node inspector; nil draws nothing
+	ov      *overlays  // plan-level header; nil keeps the plain header
+	ask     *asker     // needs-you badge, panel and answer flow; nil draws nothing
 	// Scrolling the layered view when the graph is deeper than the screen.
 	// pin is the layer held a third of the way down, or -1 to follow the
 	// busiest layer. lastFocus, lastRows and lastPage are what the previous
@@ -679,6 +682,7 @@ func (v *view) frame(w, h int, dt float64) string {
 		c.put(12, row, t.text, rgb{70, 72, 90}.mix(t.col, 0.3+0.7*fade), age < 1.5)
 	}
 
+	v.drawLoad(c, w, h, now)
 	v.drawInspector(c, w, h, ids)
 	v.drawAsk(c, w, h)
 
