@@ -65,6 +65,7 @@ func defineWatchFlags(fs *flag.FlagSet) *watchFlags {
 	o.layout = fs.String("layout", "layers", "layers: top-to-bottom layers; mycelium: a radial growth view with roots at the centre")
 	fs.BoolVar(&watchReadOnly, "read-only", false, "write nothing: hide the answer keys (a) so the watch view only reads; the needs-you panel (n) still lists")
 	fs.BoolVar(&watchNoBell, "no-bell", false, "do not ring the terminal bell when a new item needs you")
+	fs.IntVar(&watchCondense, "condense", defaultCondense, "layered view: draw each connected group of at least this many finished nodes as one node (enter opens it, x folds it, c toggles); 0 draws every node")
 	fs.BoolVar(&noOverlays, "no-overlays", false, "plain header: no epoch, work_state counts, review holds, recruiting or stream cursor")
 	// The table commands' global flags are accepted so a script can pass one set
 	// of flags to every form; the watch view says what it does with each.
@@ -83,6 +84,7 @@ func watchMain() {
 		fmt.Fprintln(os.Stderr, "       graphwatch <command> [flags]               (graphwatch help lists the commands)")
 		fmt.Fprintln(os.Stderr, "\nkeys: arrows/hjkl select a node, enter inspect, n needs-you panel (enter goes to the node),")
 		fmt.Fprintln(os.Stderr, "      a answer the selected item or node: choose, note, then a y/N confirm; q/esc quit")
+		fmt.Fprintln(os.Stderr, "      enter on a ◆ group opens it, x folds it back, c condensing on/off")
 		fmt.Fprintln(os.Stderr, "\nflags:")
 		flag.PrintDefaults()
 	}
@@ -195,6 +197,9 @@ func watchLoop(ctx context.Context, cancel context.CancelFunc, c *client, g apiG
 	if g.DependencyEdgeType != "" {
 		v.edgeT = g.DependencyEdgeType
 	}
+	v.mu.Lock()
+	v.condenseAt = watchCondense
+	v.mu.Unlock()
 
 	// Refetch on every event, coalesced: a burst of events is one read.
 	refresh := make(chan struct{}, 1)
@@ -296,6 +301,9 @@ loop:
 			break loop
 		case k := <-keys:
 			if v.ask.key(k, v.selectedKey()) {
+				continue
+			}
+			if v.groupKey(k) {
 				continue
 			}
 			if k != "q" && k != "ctrl-c" && v.insp.key(k) {

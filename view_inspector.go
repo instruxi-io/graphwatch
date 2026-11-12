@@ -153,7 +153,7 @@ func (v *view) drawInspector(c *canvas, w, h int, ids []string) {
 		if v.clipped && (cy < 3 || cy >= h-4) {
 			continue // scrolled out of the band: no marker over the chrome
 		}
-		if isHeld(v.nodes[id].status) {
+		if g := v.node(id); g != nil && isHeld(g.status) {
 			c.put(cx-1, cy, "⟨", amber, true)
 			c.put(cx+1, cy, "⟩", amber, true)
 		}

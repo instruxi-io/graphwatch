@@ -122,6 +122,7 @@ cells are written each frame.
 | `--fps` | 15 | frames per second (only changed cells are sent) |
 | `--motion` | events | `events`: motion follows graph events and a quiet graph stops drawing; `continuous`: running nodes pulse |
 | `--layout` | layers | `layers` or `mycelium` |
+| `--condense` | 8 | layered view: draw each connected group of at least this many finished nodes as one `◆` node; `0` draws every node (see [condensing](#watch-view-condensing-finished-work)) |
 | `--read-only` | false | write nothing: the watch view drops its answer key (`a`) and has no writer; `n` still lists what needs you |
 | `--no-bell` | false | do not ring the terminal bell (`\a`) when a new item needs you |
 | `--no-overlays` | false | plain header: drop the epoch, work_state counts, review holds, recruiting demand and stream cursor |
@@ -337,6 +338,25 @@ Moving the selection off the edge scrolls (and, zoomed in, pans) with it, so the
 mouse wheel works too: terminals send it as arrow keys on the alternate screen.
 `Esc` closes an open inspector first. The `--mycelium` view always fits the
 screen and ignores the scroll, pan and zoom keys.
+
+## Watch view: condensing finished work
+
+A big plan is mostly finished work. In the layered view, finished nodes (done
+or cancelled) that depend on one another form a group, and a group of at least
+`--condense` nodes (default 8) is drawn as one `◆` node, labelled with its
+size and its members' most common key prefix, or the top two when no one
+prefix covers half (`×94 xeni·travel`). It keeps its members' edges to the rest
+of the graph. The header still counts every node.
+
+| key | does |
+|---|---|
+| `enter` on a `◆` | open the group: its nodes fan out of it and the selection moves to its first |
+| `x` | fold the selected node's open group back into one `◆` |
+| `c` | condensing off (every node drawn) or back on (every open group folds) |
+
+Going to a node inside a group (from the needs-you panel, say) opens that
+group. A node that finishes joins its group on the next read. The mycelium
+view never condenses.
 
 The header shows the epoch, work_state counts, review holds, recruiting demand
 and the stream cursor. `--no-overlays` drops it back to a plain header.

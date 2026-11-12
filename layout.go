@@ -10,6 +10,7 @@ import "sort"
 type gnode struct {
 	id, key, status string
 	created         int // arrival order, the stable tiebreak
+	members         int // a condensed group's size; 0 for a node
 	prereqs         []string
 	children        []string
 }
