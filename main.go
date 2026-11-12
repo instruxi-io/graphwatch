@@ -212,11 +212,10 @@ func watchLoop(ctx context.Context, cancel context.CancelFunc, c *client, g apiG
 	pace := newPacer()
 	graphTick := pace.subscribe()
 	go func() {
+		var seen [2]int // last read's node and edge counts: how many pages to send at once
 		for {
-			ns, err1 := c.nodes(ctx, *graphID)
-			es, err2 := c.edges(ctx, *graphID)
-			if err1 == nil && err2 == nil {
-				v.apply(ns, es)
+			if n, e, err := loadGraph(ctx, c, v, *graphID, seen); err == nil {
+				seen = [2]int{n, e}
 			}
 			select {
 			case <-ctx.Done():

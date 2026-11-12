@@ -49,7 +49,7 @@ func decodeNodes(raw []json.RawMessage) ([]apiNodeFull, error) {
 
 // nodesFull is read-only.
 func (c *client) nodesFull(ctx context.Context, graphID string) ([]apiNodeFull, error) {
-	raw, err := page[json.RawMessage](ctx, c, "/graphs/"+graphID+"/nodes")
+	raw, err := pagesParallel[json.RawMessage](ctx, c, "/graphs/"+graphID+"/nodes", 0, nil)
 	if err != nil {
 		return nil, err
 	}

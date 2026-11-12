@@ -253,11 +253,12 @@ func page[T any](ctx context.Context, c *client, path string) ([]T, error) {
 }
 
 func (c *client) nodes(ctx context.Context, id string) ([]apiNode, error) {
-	return page[apiNode](ctx, c, "/graphs/"+id+"/nodes")
+	ns, err := pagesParallel[apiNode](ctx, c, "/graphs/"+id+"/nodes", 0, nil)
+	return dedupNodes(ns), err
 }
 
 func (c *client) edges(ctx context.Context, id string) ([]apiEdge, error) {
-	return page[apiEdge](ctx, c, "/graphs/"+id+"/edges")
+	return pagesParallel[apiEdge](ctx, c, "/graphs/"+id+"/edges", 0, nil)
 }
 
 // sseEvent is one frame of the activity stream: an event name, an id and a thin JSON payload.
