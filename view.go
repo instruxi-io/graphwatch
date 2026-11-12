@@ -70,6 +70,13 @@ type view struct {
 	mycKey   [3]int
 	myc      myc
 	grown    *grown // the hyphae, grown once per mycKey
+	// rows is the layered view's layer order, computed once per topo. Re-run
+	// every frame, seeded from the frame before, the barycenter sweeps on a
+	// big graph never reach a fixed point: on a 255-node plan ~100 nodes
+	// cycled between three orders for good, so the view never stopped
+	// gliding and the terminal never stopped repainting.
+	rows     [][]string
+	rowsTopo int
 	topoSig  string // nodes and dependency edges; topo moves only when it does
 	doneSeq  int
 	insp     *inspector // the node inspector; nil draws nothing
@@ -368,7 +375,10 @@ func (v *view) frame(w, h int, dt float64) string {
 		}
 		pl = placement{x: v.myc.x, y: v.myc.y, slot: v.myc.slot}
 	} else {
-		rows := order(v.nodes, depth, v.prevX)
+		if v.rows == nil || v.rowsTopo != v.topo {
+			v.rows, v.rowsTopo = order(v.nodes, depth, v.prevX), v.topo
+		}
+		rows := v.rows
 		focus := 0
 		for d, row := range rows {
 			busy := false
