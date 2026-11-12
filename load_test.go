@@ -22,6 +22,7 @@ type pagedAPI struct {
 	reqs, inFlight, peak atomic.Int32
 	noTotal              bool
 	failNodes            atomic.Bool
+	edgeDelay            time.Duration // edges answer this fast instead, as on the real API
 }
 
 func newPagedAPI(t *testing.T, nNodes, nEdges int, delay time.Duration) *pagedAPI {
@@ -41,7 +42,11 @@ func newPagedAPI(t *testing.T, nNodes, nEdges int, delay time.Duration) *pagedAP
 			p.peak.Store(n)
 		}
 		defer p.inFlight.Add(-1)
-		time.Sleep(delay)
+		if p.edgeDelay > 0 && strings.HasSuffix(r.URL.Path, "/edges") {
+			time.Sleep(p.edgeDelay)
+		} else {
+			time.Sleep(delay)
+		}
 		var all []map[string]any
 		switch {
 		case strings.HasSuffix(r.URL.Path, "/nodes"):
@@ -132,7 +137,10 @@ func TestPagesParallelCapsRequestsInFlight(t *testing.T) {
 // The first load shows progress and grows the graph page by page; once the
 // graph is in, the bar is gone and a failed refresh leaves the graph alone.
 func TestLoadGraphFirstLoadThenRefresh(t *testing.T) {
+	// Edges in at once, node pages 100 ms each (as on the real API): after
+	// page one of the nodes there is a whole 100 ms with part of the graph.
 	p := newPagedAPI(t, 450, 300, 100*time.Millisecond)
+	p.edgeDelay = 5 * time.Millisecond
 	c := newClient(p.URL, apiKey("k"))
 	v := newView()
 	clk := time.Unix(0, 0)
