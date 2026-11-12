@@ -65,7 +65,7 @@ func (h *helper) headers(ctx context.Context, fresh bool) (map[string]string, er
 
 // errSignedOut is what an empty helper answer means: the enforcer helper
 // prints {} when there is no session (or its refresh failed).
-var errSignedOut = errors.New("the auth helper returned no headers — signed out? run /enforcer:login")
+var errSignedOut = errors.New("the auth helper returned no headers — signed out? run graphwatch login (or /enforcer:login in Claude Code)")
 
 func runHelper(ctx context.Context, cmd string) (map[string]string, error) {
 	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)

@@ -55,7 +55,7 @@ func signedOutFix(source string) string {
 	case strings.HasPrefix(source, "graphwatch login"):
 		return "run graphwatch login"
 	case len(source) >= 6 && source[:6] == "plugin":
-		return "run /enforcer:login in Claude Code"
+		return "run graphwatch login (its own sign-in, which takes over from the plugin's), or /enforcer:login in Claude Code"
 	case source == "GRAPH_AUTH_HELPER":
 		return "run /enforcer:login, or check what GRAPH_AUTH_HELPER prints"
 	case source == "--api-key-file":
@@ -63,7 +63,7 @@ func signedOutFix(source string) string {
 	case source == "GRAPH_API_KEY" || source == "ENFORCER_API_KEY":
 		return "check the " + source + " variable"
 	}
-	return "check enforcer.api_key in ~/.enforcer/credentials.json, or run /enforcer:login"
+	return "run graphwatch login, or check enforcer.api_key in ~/.enforcer/credentials.json"
 }
 
 func runWhoami(ctx context.Context, env *cliEnv, args []string) int {
