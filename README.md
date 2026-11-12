@@ -60,7 +60,7 @@ gh attestation verify graphwatch-darwin-arm64 --repo instruxi-io/graphwatch
   store (on Linux, `SSL_CERT_FILE` or `SSL_CERT_DIR` add a corporate CA).
 - **Credentials.** Prefer a sign-in through the `enforcer` plugin or
   `GRAPH_AUTH_HELPER` (short-lived OAuth) over a long-lived `GRAPH_API_KEY`;
-  the full order is under [Auth](#auth). A key or sign-in with only
+  the full order is under [Auth](#auth); `graphwatch login` needs nothing installed. A key or sign-in with only
   `enforcer:read` is enough to watch and list.
 - **Writes.** Every command is read-only except `decide`, `resolve`, `attend`
   (only when you type an answer), the watch view (only when you press `a`,
@@ -369,6 +369,31 @@ the terminal restored.
 
 ## Auth
 
+### Sign in
+
+```bash
+graphwatch login                 # opens the browser; watch, list and answer
+graphwatch login --read-only     # enforcer:read only: watch and list, never answer
+graphwatch login --no-browser    # over SSH: prints the address to open elsewhere
+graphwatch logout                # revokes the sign-in on the server and forgets it
+```
+
+`login` is a standard OAuth 2.1 browser sign-in (authorization code + PKCE,
+loopback redirect on 127.0.0.1). It needs no plugin and no API key. The
+access token refreshes itself until the server's refresh lifetime runs out;
+then run `graphwatch login` again. Over SSH, sign in in any browser and paste
+the address it ends on (`http://127.0.0.1:…/callback?code=…`, even if that
+page does not load) back into the terminal.
+
+The sign-in is kept in `~/.config/graphwatch/credentials.json`
+(`~/Library/Application Support/graphwatch` on macOS; `$GRAPHWATCH_CONFIG_DIR`
+overrides), mode 0600, with one session per API origin, so dev, UAT and prod
+can all be signed in at once. `--base` picks which one `login` and `logout` act on.
+Several graphwatch processes share it safely: a refresh happens under a lock,
+because each refresh token works once.
+
+### Resolution order
+
 Every command and the watch view use one resolution order, from `auth.go`. The
 first source that is set wins:
 
@@ -376,16 +401,18 @@ first source that is set wins:
 2. `GRAPH_AUTH_HELPER`: a command that prints a JSON object of request headers; run again on a 401
 3. `GRAPH_API_KEY`
 4. `ENFORCER_API_KEY`
-5. the `enforcer` Claude Code plugin's sign-in, through its header helper
-6. `enforcer.api_key` in `~/.enforcer/credentials.json`
+5. `graphwatch login`, for the API origin in use
+6. the `enforcer` Claude Code plugin's sign-in, through its header helper
+7. `enforcer.api_key` in `~/.enforcer/credentials.json`
 
 The API origin is `--base`, then `GRAPH_BASE_URL`, then the plugin's saved
 `base_url`, then `https://api.instruxi.dev`.
 
-graphwatch will never refresh OAuth itself: the plugin's helper rotates a
-single-use refresh token and writes it back, so refreshing here, or writing
-`credentials.json`, would sign the plugin out. Sign in with `/enforcer:login`
-in Claude Code. No command prints a key, token or Authorization header.
+graphwatch never refreshes the plugin's OAuth session itself: the plugin's
+helper rotates a single-use refresh token and writes it back, so refreshing
+it here, or writing `~/.enforcer/credentials.json`, would sign the plugin out.
+`graphwatch login` keeps a separate session for that reason. No command prints
+a key, token or Authorization header.
 
 `graphwatch whoami` shows which source won:
 
