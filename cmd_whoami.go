@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 )
 
 func init() {
@@ -51,6 +52,8 @@ func pick(d map[string]any, keys ...string) string {
 // signedOutFix is the fix for the source the credential came from.
 func signedOutFix(source string) string {
 	switch {
+	case strings.HasPrefix(source, "graphwatch login"):
+		return "run graphwatch login"
 	case len(source) >= 6 && source[:6] == "plugin":
 		return "run /enforcer:login in Claude Code"
 	case source == "GRAPH_AUTH_HELPER":

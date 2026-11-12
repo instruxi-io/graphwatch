@@ -109,6 +109,14 @@ func dispatch(args []string, stdout, stderr io.Writer) (code int, handled bool) 
 	if cmd.name == "help" {
 		return runHelp(args[1:], stdout, stderr), true
 	}
+	// login and logout run before credential resolution: they are how a
+	// credential comes to exist.
+	if cmd.name == "login" {
+		return runLogin(args[1:], stdout, stderr), true
+	}
+	if cmd.name == "logout" {
+		return runLogout(args[1:], stdout, stderr), true
+	}
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 	return runCommand(ctx, cmd, args[1:], stdout, stderr), true

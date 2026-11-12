@@ -113,6 +113,7 @@ var credentialSources = []string{
 	"GRAPH_AUTH_HELPER (a command printing auth headers as JSON)",
 	"GRAPH_API_KEY",
 	"ENFORCER_API_KEY",
+	"graphwatch login (its own browser sign-in, kept in ~/.config/graphwatch; $GRAPHWATCH_CONFIG_DIR overrides)",
 	"the enforcer plugin's sign-in (~/.claude/plugins/cache/*/enforcer/*/bin/enforcer-headers.mjs)",
 	"enforcer.api_key in ~/.enforcer/credentials.json ($ENFORCER_HOME overrides the directory)",
 }
@@ -152,6 +153,17 @@ func resolveCredential(env envLookup, home string, flags authFlags) (cred creden
 	if key := get("ENFORCER_API_KEY"); key != "" {
 		return apiKey(key), "ENFORCER_API_KEY", base, nil
 	}
+	if dir := loginDir(get, home); dir != "" {
+		if store, err := readLoginStore(dir); err == nil {
+			if s := store.Sessions[base]; s != nil && (s.AccessToken != "" || s.RefreshToken != "") {
+				label := "graphwatch login"
+				if s.Account != "" {
+					label += " (" + s.Account + ")"
+				}
+				return &loginCredential{dir: dir, base: base, hc: newOAuthHTTP()}, label, base, nil
+			}
+		}
+	}
 	if path, version := findPluginHelper(home); path != "" {
 		return &helper{cmd: "node " + shellQuote(path)},
 			"plugin sign-in (enforcer " + version + " helper)", base, nil
@@ -164,7 +176,7 @@ func resolveCredential(env envLookup, home string, flags authFlags) (cred creden
 	for i, s := range credentialSources {
 		fmt.Fprintf(&b, "  %d. %s\n", i+1, s)
 	}
-	b.WriteString("Sign in with /enforcer:login in Claude Code, or set GRAPH_API_KEY.")
+	b.WriteString("Run graphwatch login, sign in with /enforcer:login in Claude Code, or set GRAPH_API_KEY.")
 	return nil, "", base, errors.New(b.String())
 }
 
