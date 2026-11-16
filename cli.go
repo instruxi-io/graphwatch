@@ -280,30 +280,52 @@ func reportError(w io.Writer, err error) int {
 }
 
 // parseErrorEnvelope pulls the machine code and message out of an error body:
-// {"error":{"code","message"}}, {"code","message"} or {"error":"text"}.
+// {"error":{"code","message"}}, {"code","message"}, or the platform envelope
+// {"error":"<code>","detail":"..."}. In that last shape error is the code
+// (node_reserved, invalid_body), not the sentence.
 func parseErrorEnvelope(b []byte) (code, msg string) {
 	var raw struct {
 		Code    string          `json:"code"`
 		Message string          `json:"message"`
+		Detail  string          `json:"detail"`
 		Error   json.RawMessage `json:"error"`
 	}
 	if json.Unmarshal(b, &raw) != nil {
 		return "", ""
 	}
-	code, msg = raw.Code, raw.Message
-	if len(raw.Error) > 0 {
-		var o struct {
-			Code    string `json:"code"`
-			Message string `json:"message"`
+	code, msg = strings.TrimSpace(raw.Code), strings.TrimSpace(raw.Message)
+	if msg == "" {
+		msg = strings.TrimSpace(raw.Detail)
+	}
+	if len(raw.Error) == 0 {
+		return code, msg
+	}
+	var o struct {
+		Code    string `json:"code"`
+		Message string `json:"message"`
+		Detail  string `json:"detail"`
+	}
+	if json.Unmarshal(raw.Error, &o) == nil && (o.Code != "" || o.Message != "" || o.Detail != "") {
+		if c := strings.TrimSpace(o.Code); c != "" {
+			code = c
 		}
-		var s string
-		if json.Unmarshal(raw.Error, &o) == nil && (o.Code != "" || o.Message != "") {
-			code, msg = o.Code, o.Message
-		} else if json.Unmarshal(raw.Error, &s) == nil && msg == "" {
-			msg = s
+		if m := strings.TrimSpace(o.Message); m != "" {
+			msg = m
+		} else if msg == "" {
+			msg = strings.TrimSpace(o.Detail)
+		}
+		return code, msg
+	}
+	var s string
+	if json.Unmarshal(raw.Error, &s) == nil && strings.TrimSpace(s) != "" {
+		if code == "" {
+			code = strings.TrimSpace(s)
+		}
+		if msg == "" {
+			msg = code
 		}
 	}
-	return strings.TrimSpace(code), strings.TrimSpace(msg)
+	return code, msg
 }
 
 // resolveFromProcess is the one place a command, the watch path and --demo get
