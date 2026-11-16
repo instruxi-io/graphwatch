@@ -63,7 +63,8 @@ gh attestation verify graphwatch-darwin-arm64 --repo instruxi-io/graphwatch
   the full order is under [Auth](#auth); `graphwatch login` needs nothing installed. A key or sign-in with only
   `enforcer:read` is enough to watch and list.
 - **Writes.** Every command is read-only except `decide`, `resolve`, `attend`
-  (only when you type an answer), the watch view (only when you press `a`,
+  (only when you type an answer), `nodes claim` (one POST to claim that node),
+  the watch view (only when you press `a`,
   pick an answer and confirm it with `y`; `--read-only` turns that off) and
   `--demo`. The service still checks each
   write against your role.
@@ -150,7 +151,7 @@ exits 2.
 ## Commands
 
 `graphwatch` with no arguments opens the picker; `graphwatch <command>` runs one
-of the commands below. All of them are read-only (GET only) except `decide`, `resolve` and `attend`, which write only when you answer: one POST per answer. Global flags:
+of the commands below. All of them are read-only (GET only) except `decide`, `resolve`, `attend` and `nodes claim`. `decide`, `resolve` and `attend` write only when you answer (one POST per answer); `nodes claim` claims one node with one POST. Global flags:
 `--base <url>  --json  --limit <n>  --no-color  --api-key-file <path>  --timeout <duration>`. Flags may come before or after the
 positional arguments (`graphwatch nodes --json <graph>` and `graphwatch nodes <graph> --json` are the same).
 `graphwatch help <command>` lists a command's flags.
@@ -162,7 +163,7 @@ move the cursor or clear your screen; `--json` output is untouched.
 |---|---|---|
 | `graphwatch whoami` | the account, tenant and role the API resolves, and where the credential came from | `graphwatch whoami` |
 | `graphwatch graphs` | list the graphs you can see (`--archived` includes archived ones, `--full-ids` prints whole ids), or `graphs show <id\|slug>` for one with its roll-up | `graphwatch graphs` |
-| `graphwatch nodes` | list a graph's tasks (`--status`, `--type`), or `nodes show <graph> <key\|id>` with its runs | `graphwatch nodes --status active <graph>` |
+| `graphwatch nodes` | list a graph's tasks (`--status`, `--type`; an `ACCESS` column reads the server's `claim_block` and `private`), `nodes show <graph> <key\|id>` with its runs, assignment and private flag, or `nodes claim <graph> <key\|id>` (a write; a node reserved for someone else exits 1) | `graphwatch nodes --status active <graph>` |
 | `graphwatch edges` | list a graph's dependencies; `--as-flow` prints prerequisite to dependent | `graphwatch edges --as-flow <graph>` |
 | `graphwatch runs` | a node's runs and how they were judged; `runs show <graph> <node> <run>` (node by key or id, run by id or unique prefix; `--full` prints evidence in full) | `graphwatch runs <graph> <node>` |
 | `graphwatch review` | human review items holding a graph (`--open`, `--all`), then the gates awaiting a decision; `review show <graph> <item>` | `graphwatch review <graph>` |
@@ -189,13 +190,13 @@ ID        SLUG   NAME        MODE  LIFECYCLE
 11111111  alpha  Alpha plan  dag   open
 
 $ graphwatch nodes <graph>
-KEY     TYPE  STATUS  WORK_STATE        TIER  TITLE
-design  task  done    finished          -     Design
-build   task  active  looking_for_work  -     Build
+KEY     TYPE  STATUS  WORK_STATE        TIER  ACCESS  TITLE
+design  task  done    finished          -     -       Design
+build   task  active  looking_for_work  -     -       Build
 
 $ graphwatch nodes --status active <graph>
-KEY    TYPE  STATUS  WORK_STATE        TIER  TITLE
-build  task  active  looking_for_work  -     Build
+KEY    TYPE  STATUS  WORK_STATE        TIER  ACCESS  TITLE
+build  task  active  looking_for_work  -     -       Build
 
 $ graphwatch edges <graph>
 FROM_KEY  RELATION    TO_KEY  TYPE

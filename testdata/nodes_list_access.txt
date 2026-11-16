@@ -1,0 +1,5 @@
+KEY    TYPE  STATUS  WORK_STATE        TIER      ACCESS          TITLE
+alpha  task  active  looking_for_work  standard  -               Mine
+beta   task  active  looking_for_work  -         reserved        Theirs
+gamma  task  active  looking_for_work  -         local           Local
+delta  task  active  looking_for_work  -         reserved,local  Both

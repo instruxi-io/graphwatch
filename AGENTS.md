@@ -67,11 +67,11 @@ and say so in the commit.
 8. **Never commit a key, a token or a transcript.** `.npmrc` reads `GITHUB_TOKEN`
    from the environment at install time and is committed without a value.
 9. **Navigation commands are read-only.** Every `graphwatch` command other than
-   `--demo`, `decide`, `resolve`, `attend` and the watch view issues GET only
-   (`decide` and `resolve` record an answer with one POST, and `attend` and
-   the watch view post the same two when you answer; none writes unless you
-   run it that way); each lives in `cmd_<name>.go` and
-   registers itself from `init()`.
+   `--demo`, `decide`, `resolve`, `attend`, `nodes claim` and the watch view
+   issues GET only (`decide` and `resolve` record an answer with one POST,
+   `nodes claim` claims one node with one POST, and `attend` and the watch
+   view post the same two when you answer; none writes unless you run it that
+   way); each lives in `cmd_<name>.go` and registers itself from `init()`.
 
 ## Credentials
 

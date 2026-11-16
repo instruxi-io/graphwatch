@@ -1,0 +1,14 @@
+key:         beta
+id:          n1
+type:        task
+title:       Second
+status:      active
+work_state:  looking_for_work
+assignee:    ada
+assignment:  advisory
+
+description:
+Do the thing
+
+runs: 0
+ATTEMPT  STATUS  RUNNER  CREATED
