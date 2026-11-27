@@ -286,7 +286,9 @@ async function main() {
   }
 
   // ── 5. Steward deactivation stops both agents within one request ──────
-  await call("admin", ADMIN, "PUT", `/enforcer/accounts/${stewardId}/active`, { active: false });
+  // The /admin twin (adminSetAccountActive): from enforcer-v3 #750 the core
+  // PUT /accounts/{id}/active acts only on the caller's own account.
+  await call("admin", ADMIN, "PUT", `/enforcer/admin/accounts/${stewardId}/active`, { active: false });
   try {
     for (const a of agents) {
       const r = await call(a.name, a.secret, "POST", `${g}/frontier/claim`, { limit: 1, runner: `team-${a.name}` }, { expect: "any" });
@@ -295,7 +297,7 @@ async function main() {
       check(`agent ${a.name} suspended: steward_inactive`, st.state === "suspended" && st.state_reason === "steward_inactive", `${st.state}:${st.state_reason}`);
     }
   } finally {
-    if (process.env.AGENT_TEAM_KEEP_STEWARD_OFF !== "1") await call("admin", ADMIN, "PUT", `/enforcer/accounts/${stewardId}/active`, { active: true }, { expect: "any" });
+    if (process.env.AGENT_TEAM_KEEP_STEWARD_OFF !== "1") await call("admin", ADMIN, "PUT", `/enforcer/admin/accounts/${stewardId}/active`, { active: true }, { expect: "any" });
   }
 }
 

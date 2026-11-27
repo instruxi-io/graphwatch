@@ -234,7 +234,7 @@ npm run agent-team
   `spec.md` in the graph folder; each run is judged by the OTHER agent and a
   self-vote is `403`; `GET /runs/query?on_behalf_of=me` shows `agent_id` and
   `on_behalf_of` on every run, and v3's `/agents/{id}/audit-events` names the
-  steward on every agent event; after `PUT /accounts/{steward}/active false`,
+  steward on every agent event; after `PUT /admin/accounts/{steward}/active false` (adminSetAccountActive),
   each agent's next claim is `401` and the agent is
   `suspended:steward_inactive`.
 - Re-activating the steward does NOT re-activate the agents (they are enabled
